@@ -2,10 +2,11 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft: 5 Textures</title>
+    <title>Minecraft: Inventory System</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+        body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
+        /* Прицел */
         #crosshair {
             position: absolute; top: 50%; left: 50%;
             width: 20px; height: 20px;
@@ -14,33 +15,82 @@
             pointer-events: none; z-index: 10;
         }
 
+        /* Инструкция */
         #instructions {
             position: absolute; top: 10px; left: 10px;
             color: white; 
             background: rgba(0,0,0,0.6); padding: 15px; border-radius: 5px;
-            pointer-events: none; user-select: none;
+            pointer-events: none;
         }
 
+        /* ХОТБАР (Снизу) */
         #hotbar {
             position: absolute; bottom: 20px; left: 50%;
             transform: translateX(-50%);
             display: flex; gap: 10px;
             background: rgba(0, 0, 0, 0.5); padding: 10px;
-            border-radius: 10px; pointer-events: none;
+            border-radius: 10px; 
+            pointer-events: none; /* Чтобы не мешал кликам игры, пока инвентарь закрыт */
+            z-index: 20;
         }
 
         .slot {
-            width: 50px; height: 50px;
-            border: 3px solid #555; background-color: rgba(0,0,0,0.3);
+            width: 60px; height: 60px;
+            border: 4px solid #555; background-color: rgba(0,0,0,0.4);
             display: flex; justify-content: center; align-items: center;
             color: white; font-weight: bold; font-size: 20px;
-            background-size: cover; /* Чтобы текстура заполняла слот */
+            background-size: cover; background-repeat: no-repeat;
+            transition: transform 0.1s;
         }
 
         .slot.active {
-            border-color: white; background-color: rgba(255, 255, 255, 0.2);
+            border-color: white; 
             transform: scale(1.1);
+            background-color: rgba(255, 255, 255, 0.1);
         }
+
+        /* МЕНЮ ИНВЕНТАРЯ (На кнопку E) */
+        #inventory-screen {
+            display: none; /* Скрыто по умолчанию */
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 100;
+            justify-content: center; align-items: center; flex-direction: column;
+        }
+
+        #inventory-container {
+            background: #c6c6c6;
+            padding: 20px;
+            border: 4px solid #555;
+            width: 400px;
+            display: flex; flex-direction: column; gap: 20px;
+        }
+
+        .inv-title { font-weight: bold; color: #333; margin-bottom: 5px; }
+
+        .inv-grid {
+            display: flex; gap: 10px; flex-wrap: wrap;
+        }
+
+        .inv-slot {
+            width: 50px; height: 50px;
+            border: 2px solid #888; background: #8b8b8b;
+            cursor: pointer;
+            background-size: cover;
+        }
+        .inv-slot:hover { border-color: white; }
+
+        /* Летающий блок (прилипший к мышке) */
+        #cursor-item {
+            position: absolute;
+            width: 40px; height: 40px;
+            pointer-events: none; /* Чтобы клики проходили сквозь него */
+            z-index: 200;
+            background-size: cover;
+            display: none;
+            border: 2px solid yellow;
+        }
+
     </style>
 </head>
 <body>
@@ -48,14 +98,36 @@
     
     <div id="instructions">
         <b>Управление:</b><br>
-        WASD - Ходить<br>
-        CTRL - Бег | SHIFT - Красться<br>
-        1-5 - Выбор блока<br>
-        ЛКМ - Ломать | ПКМ - Строить
+        E - Инвентарь<br>
+        WASD - Ходить | Shift/Ctrl<br>
+        1-5 - Выбор слота<br>
+        ПКМ - Строить
     </div>
 
     <div id="hotbar">
-        <div class="slot active" id="slot-0">1</div> <div class="slot" id="slot-1">2</div> <div class="slot" id="slot-2">3</div> <div class="slot" id="slot-3">4</div> <div class="slot" id="slot-4">5</div> </div>
+        <div class="slot active" id="slot-0"></div>
+        <div class="slot" id="slot-1"></div>
+        <div class="slot" id="slot-2"></div>
+        <div class="slot" id="slot-3"></div>
+        <div class="slot" id="slot-4"></div>
+    </div>
+
+    <div id="inventory-screen">
+        <div id="inventory-container">
+            <div>
+                <div class="inv-title">Выбор блоков:</div>
+                <div class="inv-grid" id="creative-grid">
+                    </div>
+            </div>
+            
+            <div style="text-align: center; color: #333; margin-top: 10px;">
+                Кликни на блок, затем на слот ниже, чтобы положить.
+                <br>Нажми <b>E</b> или <b>ESC</b> чтобы вернуться.
+            </div>
+        </div>
+    </div>
+
+    <div id="cursor-item"></div>
 
     <script type="importmap">
         {
@@ -79,6 +151,15 @@
         let canJump = false;
         let isSprinting = false;
         let isCrouching = false;
+        
+        // Переменные инвентаря
+        let isInventoryOpen = false;
+        let holdingBlockIndex = null; // Какой блок мы сейчас тащим мышкой (0-4)
+        
+        // Содержимое хотбара (хранит индексы материалов). null = пусто
+        // По умолчанию пусто, или можно заполнить чем-то. Давай оставим пустым для реализма.
+        let hotbarContent = [0, 1, 2, 3, 4]; // (Для теста заполнил 0-4, но ты можешь менять в игре)
+        let selectedSlot = 0;
 
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
@@ -95,7 +176,15 @@
         let playerHeight = STAND_HEIGHT;
 
         let materials = [];
-        let selectedSlot = 0;
+        // URL текстур для отображения в HTML
+        const textureUrls = [
+            './textures/grass.png',
+            './textures/dirt.png',
+            './textures/bricks.png',
+            './textures/obsidian.png',
+            './textures/iron.png'
+        ];
+
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
 
         init();
@@ -116,63 +205,90 @@
             scene.add(dirLight);
 
             controls = new PointerLockControls(camera, document.body);
-            document.body.addEventListener('click', () => controls.lock());
             
-            // --- ЗАГРУЗКА 5 ТЕКСТУР ---
+            // --- ЛОГИКА ОТКРЫТИЯ ИНВЕНТАРЯ И ПАУЗЫ ---
+            const invScreen = document.getElementById('inventory-screen');
+            const instructions = document.getElementById('instructions');
+
+            // Клик по экрану лочит курсор ТОЛЬКО если инвентарь закрыт
+            document.body.addEventListener('click', (e) => {
+                // Если кликнули по интерфейсу инвентаря - не лочить
+                if (isInventoryOpen) return;
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', () => {
+                isInventoryOpen = false;
+                invScreen.style.display = 'none';
+                instructions.style.display = 'none';
+            });
+
+            controls.addEventListener('unlock', () => {
+                // Если мы вышли не кнопкой E, а просто ESC - можно показать меню
+                if (!isInventoryOpen) {
+                    instructions.style.display = 'block';
+                }
+            });
+            
+            // Загрузка текстур
             const loader = new THREE.TextureLoader();
             const fallbackMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
 
             try {
-                // Загружаем картинки
-                const grassTex = loader.load('./textures/grass.png');
-                const dirtTex = loader.load('./textures/dirt.png');
-                const brickTex = loader.load('./textures/bricks.png');
-                const obsidianTex = loader.load('./textures/obsidian.png');
-                const ironTex = loader.load('./textures/iron.png');
-
-                // Пикселизация (чтобы было четко)
-                const textures = [grassTex, dirtTex, brickTex, obsidianTex, ironTex];
-                textures.forEach(t => t.magFilter = THREE.NearestFilter);
+                // Загружаем текстуры для 3D (с Pixel Art фильтром)
+                const loadedTextures = textureUrls.map(url => {
+                    const t = loader.load(url);
+                    t.magFilter = THREE.NearestFilter;
+                    return t;
+                });
 
                 // Создаем материалы
-                const grassMat = new THREE.MeshLambertMaterial({ map: grassTex });
-                const dirtMat = new THREE.MeshLambertMaterial({ map: dirtTex });
-                const brickMat = new THREE.MeshLambertMaterial({ map: brickTex });
-                const obsidianMat = new THREE.MeshLambertMaterial({ map: obsidianTex });
-                const ironMat = new THREE.MeshLambertMaterial({ map: ironTex });
-
-                // Порядок материалов в массиве (0=Трава, 1=Грязь, 2=Кирпич, 3=Обсидиан, 4=Железо)
-                materials = [grassMat, dirtMat, brickMat, obsidianMat, ironMat];
+                materials = [
+                    new THREE.MeshLambertMaterial({ map: loadedTextures[0] }), // Трава
+                    new THREE.MeshLambertMaterial({ map: loadedTextures[1] }), // Грязь
+                    new THREE.MeshLambertMaterial({ map: loadedTextures[2] }), // Кирпич
+                    new THREE.MeshLambertMaterial({ map: loadedTextures[3] }), // Обсидиан
+                    new THREE.MeshLambertMaterial({ map: loadedTextures[4] })  // Железо
+                ];
                 
-                // Ставим картинки в слоты инвентаря
-                document.getElementById('slot-0').style.backgroundImage = 'url(./textures/grass.png)';
-                document.getElementById('slot-1').style.backgroundImage = 'url(./textures/dirt.png)';
-                document.getElementById('slot-2').style.backgroundImage = 'url(./textures/bricks.png)';
-                document.getElementById('slot-3').style.backgroundImage = 'url(./textures/obsidian.png)';
-                document.getElementById('slot-4').style.backgroundImage = 'url(./textures/iron.png)';
+                initInventoryUI(); // Создаем картинки в меню
+                updateHotbarUI();  // Рисуем хотбар
 
             } catch (e) {
-                console.error("Ошибка загрузки текстур", e);
-                // Если ошибка, заполняем розовым
-                materials = [fallbackMat, fallbackMat, fallbackMat, fallbackMat, fallbackMat];
+                console.error(e);
+                materials = [fallbackMat];
             }
 
+            // --- ОБРАБОТКА КЛАВИШ ---
             const onKeyDown = (e) => {
                 switch (e.code) {
+                    case 'KeyE':
+                        // Переключение инвентаря
+                        if (isInventoryOpen) {
+                            // Закрыть
+                            isInventoryOpen = false;
+                            invScreen.style.display = 'none';
+                            holdingBlockIndex = null; // Сброс выбранного блока
+                            updateCursorItem(null);
+                            controls.lock(); // Вернуться в игру
+                        } else {
+                            // Открыть
+                            isInventoryOpen = true;
+                            invScreen.style.display = 'flex';
+                            controls.unlock(); // Освободить мышь
+                        }
+                        break;
+
                     case 'KeyW': moveForward = true; break;
                     case 'KeyA': moveLeft = true; break;
                     case 'KeyS': moveBackward = true; break;
                     case 'KeyD': moveRight = true; break;
                     case 'Space': 
-                        if (canJump && !isCrouching) { 
-                            velocity.y += JUMP_FORCE; 
-                            canJump = false; 
-                        } 
+                        if (canJump && !isCrouching) { velocity.y += JUMP_FORCE; canJump = false; } 
                         break;
                     case 'ControlLeft': isSprinting = true; break;
                     case 'ShiftLeft': isCrouching = true; break;
                     
-                    // КНОПКИ ВЫБОРА БЛОКОВ (1-5)
                     case 'Digit1': selectSlot(0); break;
                     case 'Digit2': selectSlot(1); break;
                     case 'Digit3': selectSlot(2); break;
@@ -193,10 +309,12 @@
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
 
+            // Колесико
             document.addEventListener('wheel', (event) => {
+                if (isInventoryOpen) return;
                 if (event.deltaY > 0) {
                     let newSlot = selectedSlot + 1;
-                    if (newSlot > 4) newSlot = 0; // Теперь у нас 4 - последний индекс (всего 5)
+                    if (newSlot > 4) newSlot = 0;
                     selectSlot(newSlot);
                 } else {
                     let newSlot = selectedSlot - 1;
@@ -205,14 +323,21 @@
                 }
             });
 
+            // Движение мыши в инвентаре (для летающего блока)
+            document.addEventListener('mousemove', (e) => {
+                if (isInventoryOpen && holdingBlockIndex !== null) {
+                    const cursorItem = document.getElementById('cursor-item');
+                    cursorItem.style.left = e.clientX + 'px';
+                    cursorItem.style.top = e.clientY + 'px';
+                }
+            });
+
             raycaster = new THREE.Raycaster();
             raycaster.far = 5; 
             document.addEventListener('mousedown', onMouseClick);
 
-            // --- ГЕНЕРАЦИЯ МИРА ---
+            // ГЕНЕРАЦИЯ МИРА
             const floorRadius = 12;
-            
-            // 1. Грязь (слои -5, -4, -3, -2, -1)
             for (let y = -5; y < 0; y++) {
                 for (let x = -floorRadius; x < floorRadius; x++) {
                     for (let z = -floorRadius; z < floorRadius; z++) {
@@ -220,7 +345,6 @@
                     }
                 }
             }
-            // 2. Трава (слой 0)
             for (let x = -floorRadius; x < floorRadius; x++) {
                 for (let z = -floorRadius; z < floorRadius; z++) {
                     createBlock(x, 0, z, materials[0]); // Трава
@@ -233,10 +357,68 @@
             window.addEventListener('resize', onWindowResize);
         }
 
-        // --- ЛОГИКА ---
-        function getKey(x, y, z) {
-            return `${x},${y},${z}`;
+        // --- UI ИНВЕНТАРЯ ---
+
+        function initInventoryUI() {
+            const grid = document.getElementById('creative-grid');
+            
+            // Создаем слоты в меню для каждого материала
+            textureUrls.forEach((url, index) => {
+                const el = document.createElement('div');
+                el.className = 'inv-slot';
+                el.style.backgroundImage = `url(${url})`;
+                
+                // Клик по блоку в меню
+                el.onclick = () => {
+                    holdingBlockIndex = index;
+                    updateCursorItem(url);
+                };
+                
+                grid.appendChild(el);
+            });
+
+            // Делаем кликабельным сам хотбар (чтобы класть туда вещи)
+            for (let i = 0; i < 5; i++) {
+                const slotEl = document.getElementById(`slot-${i}`);
+                // Нужно разрешить клики по хотбару, когда открыт инвентарь
+                slotEl.style.pointerEvents = 'auto'; 
+                
+                slotEl.onclick = () => {
+                    if (isInventoryOpen && holdingBlockIndex !== null) {
+                        // Кладем предмет в слот
+                        hotbarContent[i] = holdingBlockIndex;
+                        updateHotbarUI();
+                        // Можно сбрасывать предмет с мыши, а можно оставлять для копирования
+                        // holdingBlockIndex = null; updateCursorItem(null); 
+                    }
+                };
+            }
         }
+
+        function updateCursorItem(url) {
+            const cursorItem = document.getElementById('cursor-item');
+            if (url) {
+                cursorItem.style.display = 'block';
+                cursorItem.style.backgroundImage = `url(${url})`;
+            } else {
+                cursorItem.style.display = 'none';
+            }
+        }
+
+        function updateHotbarUI() {
+            for (let i = 0; i < 5; i++) {
+                const slotEl = document.getElementById(`slot-${i}`);
+                const materialIndex = hotbarContent[i];
+                
+                if (materialIndex !== null && materialIndex !== undefined) {
+                    slotEl.style.backgroundImage = `url(${textureUrls[materialIndex]})`;
+                } else {
+                    slotEl.style.backgroundImage = 'none';
+                }
+            }
+        }
+
+        function getKey(x, y, z) { return `${x},${y},${z}`; }
 
         function createBlock(x, y, z, mat) {
             const voxel = new THREE.Mesh(cubeGeo, mat);
@@ -260,25 +442,31 @@
         }
 
         function onMouseClick(event) {
+            if (isInventoryOpen) return; // Не строим, если открыт инвентарь
             if (!controls.isLocked) return;
+            
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             const intersects = raycaster.intersectObjects(objects);
 
             if (intersects.length > 0) {
                 const intersect = intersects[0];
                 if (!intersect.face) return;
-                if (intersect.distance > 5) return; 
+                if (intersect.distance > 5) return;
 
-                if (event.button === 0) {
+                if (event.button === 0) { // ЛКМ
                     removeBlock(intersect.object);
-                } else if (event.button === 2) {
-                    const materialToPlace = materials[selectedSlot];
+                } else if (event.button === 2) { // ПКМ
+                    // Проверяем, есть ли что-то в текущем слоте
+                    const matIndex = hotbarContent[selectedSlot];
+                    if (matIndex === null || matIndex === undefined) return; // Пустая рука
+                    
+                    const materialToPlace = materials[matIndex];
+                    
                     const p = intersect.object.position.clone().add(intersect.face.normal);
                     
                     const px = camera.position.x;
                     const py = camera.position.y;
                     const pz = camera.position.z;
-                    // Анти-застревание
                     if (Math.abs(px - p.x) < 0.8 && Math.abs(pz - p.z) < 0.8 && (py - p.y) < 1.5 && (py - p.y) > -0.5) return;
 
                     const voxel = new THREE.Mesh(cubeGeo, materialToPlace);
@@ -302,28 +490,23 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            if (controls.isLocked) {
+            // Останавливаем физику, если открыт инвентарь
+            if (controls.isLocked && !isInventoryOpen) {
                 const time = performance.now();
                 const delta = (time - prevTime) / 1000;
                 
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-                velocity.y -= 30.0 * delta; 
+                velocity.y -= 30.0 * delta;
 
                 direction.z = Number(moveForward) - Number(moveBackward);
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
 
                 let currentSpeed = WALK_SPEED;
-                if (isCrouching) {
-                    currentSpeed = CROUCH_SPEED;
-                    playerHeight = CROUCH_HEIGHT;
-                } else if (isSprinting) {
-                    currentSpeed = SPRINT_SPEED;
-                    playerHeight = STAND_HEIGHT;
-                } else {
-                    playerHeight = STAND_HEIGHT;
-                }
+                if (isCrouching) { currentSpeed = CROUCH_SPEED; playerHeight = CROUCH_HEIGHT; } 
+                else if (isSprinting) { currentSpeed = SPRINT_SPEED; playerHeight = STAND_HEIGHT; } 
+                else { playerHeight = STAND_HEIGHT; }
 
                 if (moveForward || moveBackward) velocity.z -= direction.z * currentSpeed * delta;
                 if (moveLeft || moveRight) velocity.x -= direction.x * currentSpeed * delta;
@@ -339,11 +522,9 @@
 
                 if (hasBlock(camera.position.x, kneeY, camera.position.z) || 
                     hasBlock(camera.position.x, headY, camera.position.z)) {
-                    
                     camera.position.x = oldX;
                     camera.position.z = oldZ;
-                    velocity.x = 0;
-                    velocity.z = 0;
+                    velocity.x = 0; velocity.z = 0;
                 }
 
                 camera.position.y += (velocity.y * delta);
@@ -366,8 +547,10 @@
                     camera.position.set(0, 20, 0);
                     velocity.y = 0;
                 }
-
                 prevTime = time;
+            } else {
+                // Обновляем время даже в паузе, чтобы не было рывка после закрытия меню
+                prevTime = performance.now();
             }
             renderer.render(scene, camera);
         }
