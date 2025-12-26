@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: Worlds & Settings (Fixed)</title>
+    <title>Minecraft JS: Host System</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
@@ -20,7 +20,7 @@
             background: rgba(0,0,0,0.75); z-index: -1;
         }
 
-        /* --- СТИЛИ КНОПОК --- */
+        /* --- СТИЛИ --- */
         .mc-btn {
             width: 400px; height: 40px; margin: 5px;
             font-family: sans-serif; font-size: 16px; color: #ddd; text-shadow: 1px 1px #000;
@@ -39,7 +39,7 @@
             background: #000; border: 1px solid #aaa; color: #fff; padding: 5px; font-size: 16px;
         }
 
-        #world-list {
+        #world-list, #server-list {
             width: 400px; max-height: 200px; overflow-y: auto;
             background: rgba(0,0,0,0.5); border: 1px solid #555; margin-bottom: 10px;
         }
@@ -48,7 +48,7 @@
             display: flex; justify-content: space-between;
         }
         .world-item:hover { background: rgba(255,255,255,0.1); }
-        .del-btn { color: red; cursor: pointer; font-weight: bold; }
+        .del-btn { color: #ff5555; cursor: pointer; font-weight: bold; margin-left: 10px; }
 
         .setting-row { color: white; margin: 10px; display: flex; flex-direction: column; align-items: center; }
         input[type=range] { width: 300px; }
@@ -130,7 +130,11 @@
 
     <div id="screen-multi" class="menu-screen">
         <h1>Сетевая игра</h1>
-        <button class="mc-btn" onclick="createLobby()">Создать лобби</button>
+        
+        <h2 style="color: #aaa; font-size: 14px; margin: 0;">Мои активные сервера:</h2>
+        <div id="server-list"></div>
+
+        <button class="mc-btn" onclick="createLobby()">Создать новое лобби</button>
         <h2 style="margin: 10px;">--- ИЛИ ---</h2>
         <input type="text" id="lobby-code-input" class="mc-input" placeholder="Код лобби" maxlength="10">
         <button class="mc-btn" onclick="joinLobby()">Подключиться</button>
@@ -189,9 +193,8 @@
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
         import { initializeApp } from "firebase-app";
-        import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect } from "firebase-database";
+        import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get } from "firebase-database";
 
-        // --- FIREBASE CONFIG ---
         const firebaseConfig = {
           apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI",
           authDomain: "minecraft-2ec53.firebaseapp.com",
@@ -203,7 +206,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
+        // Глобальные
         let camera, scene, renderer, controls;
         const objects = []; 
         let worldData = {}; 
@@ -211,14 +214,16 @@
         const otherPlayers = {}; 
         let raycaster;
 
-        // Состояние игры
+        // Состояние
         let isMultiplayer = false;
+        let isHost = false; // ТЫ ХОСТ ИЛИ НЕТ?
         let currentLobbyId = null;
         let currentWorldName = null;
         let isPaused = false;
         let isGameRunning = false;
         let playerId = 'player_' + Math.random().toString(36).substr(2, 9);
         let playerRef, worldRef;
+        let lobbyRefCheck; // Слушатель удаления лобби
 
         // Физика
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
@@ -228,154 +233,117 @@
         let prevTime = performance.now();
         let lastUploadTime = 0;
 
-        // Настройки
         let settings = { sensitivity: 0.5, renderDist: 60 };
-
-        // ИСПРАВЛЕННАЯ ПЕРЕМЕННАЯ (была ошибка тут)
         let isInventoryOpen = false;
         let holdingBlockIndex = null;
         let hotbarContent = [null,null,null,null,null];
         let selectedSlot = 0;
 
-        // Константы
         const WALK_SPEED = 30.0, SPRINT_SPEED = 50.0, CROUCH_SPEED = 10.0, JUMP_FORCE = 9, GRAVITY = 24.0;
-        const PLAYER_HEIGHT = 1.6, PLAYER_RADIUS = 0.3;
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
         const textureUrls = ['./textures/grass.png', './textures/dirt.png', './textures/bricks.png', './textures/obsidian.png', './textures/iron.png'];
 
-        // --- МЕНЮ СИСТЕМА ---
+        // --- МЕНЮ ---
         window.showScreen = (screenId) => {
             document.querySelectorAll('.menu-screen').forEach(el => el.style.display = 'none');
             document.getElementById(screenId).style.display = 'flex';
             if (screenId === 'screen-worlds') renderWorldList();
+            if (screenId === 'screen-multi') renderServerList();
         };
 
-        // --- НАСТРОЙКИ ---
         const sensSlider = document.getElementById('sens-slider');
         const distSlider = document.getElementById('dist-slider');
-        
         sensSlider.oninput = () => document.getElementById('sens-val').innerText = sensSlider.value;
         distSlider.oninput = () => document.getElementById('dist-val').innerText = distSlider.value;
-
         window.saveSettings = () => {
             settings.sensitivity = parseFloat(sensSlider.value);
             settings.renderDist = parseInt(distSlider.value);
-            
-            if (controls) controls.pointerSpeed = settings.sensitivity;
-            if (scene && scene.fog) {
-                scene.fog.far = settings.renderDist;
-                camera.far = settings.renderDist * 2;
-                camera.updateProjectionMatrix();
-            }
-            
-            if (isGameRunning) {
-                document.getElementById('screen-settings').style.display = 'none';
-                document.getElementById('pause-menu').style.display = 'flex';
-            } else {
-                showScreen('screen-main');
-            }
+            if(controls) controls.pointerSpeed = settings.sensitivity;
+            if(isGameRunning) { document.getElementById('screen-settings').style.display = 'none'; document.getElementById('pause-menu').style.display = 'flex'; }
+            else showScreen('screen-main');
         };
-
-        window.openSettingsIngame = () => {
-            document.getElementById('pause-menu').style.display = 'none';
-            document.getElementById('screen-settings').style.display = 'flex';
-        };
+        window.openSettingsIngame = () => { document.getElementById('pause-menu').style.display = 'none'; document.getElementById('screen-settings').style.display = 'flex'; };
 
         // --- LOCAL STORAGE ---
-        function getLocalWorlds() {
-            const data = localStorage.getItem('mc_worlds');
-            return data ? JSON.parse(data) : {};
-        }
-
-        function saveLocalWorlds(worlds) {
-            try { localStorage.setItem('mc_worlds', JSON.stringify(worlds)); } catch (e) { alert("Память переполнена."); }
-        }
-
+        function getLocalWorlds() { const d = localStorage.getItem('mc_worlds'); return d ? JSON.parse(d) : {}; }
+        function saveLocalWorlds(w) { try { localStorage.setItem('mc_worlds', JSON.stringify(w)); } catch (e) {} }
         window.createLocalWorld = () => {
-            const name = document.getElementById('new-world-name').value.trim();
-            if (!name) return alert("Введите имя!");
-            const worlds = getLocalWorlds();
-            if (worlds[name]) return alert("Мир с таким именем уже есть!");
-
-            worlds[name] = { created: Date.now(), blocks: {} };
-            saveLocalWorlds(worlds);
-            loadLocalWorld(name);
+            const n = document.getElementById('new-world-name').value.trim();
+            if(!n) return alert("Имя?");
+            const w = getLocalWorlds(); if(w[n]) return alert("Занято");
+            w[n] = { blocks: {} }; saveLocalWorlds(w); loadLocalWorld(n);
         };
-
         window.renderWorldList = () => {
-            const list = document.getElementById('world-list');
-            list.innerHTML = '';
-            const worlds = getLocalWorlds();
-            
-            if (Object.keys(worlds).length === 0) {
-                list.innerHTML = '<div style="padding:10px; color:#aaa;">Нет созданных миров</div>';
-                return;
-            }
-
-            for (let name in worlds) {
-                const div = document.createElement('div');
-                div.className = 'world-item';
-                div.innerHTML = `<span>${name}</span> <span class="del-btn" onclick="deleteWorld('${name}')">X</span>`;
-                div.onclick = (e) => {
-                    if (!e.target.classList.contains('del-btn')) loadLocalWorld(name);
-                };
-                list.appendChild(div);
+            const l = document.getElementById('world-list'); l.innerHTML = ''; const w = getLocalWorlds();
+            for(let n in w) {
+                const d = document.createElement('div'); d.className='world-item';
+                d.innerHTML = `<span>${n}</span> <span class="del-btn" onclick="deleteWorld('${n}')">X</span>`;
+                d.onclick=(e)=>{if(!e.target.classList.contains('del-btn')) loadLocalWorld(n)};
+                l.appendChild(d);
             }
         };
-
-        window.deleteWorld = (name) => {
-            if (!confirm(`Удалить мир "${name}"?`)) return;
-            const worlds = getLocalWorlds();
-            delete worlds[name];
-            saveLocalWorlds(worlds);
-            renderWorldList();
-        };
-
-        function loadLocalWorld(name) {
-            currentWorldName = name;
-            isMultiplayer = false;
-            const worlds = getLocalWorlds();
-            const worldDataToLoad = worlds[name].blocks;
-            
+        window.deleteWorld = (n) => { if(confirm("Удалить?")) { const w=getLocalWorlds(); delete w[n]; saveLocalWorlds(w); renderWorldList(); }};
+        function loadLocalWorld(n) {
+            currentWorldName = n; isMultiplayer = false; isHost = false;
             startEngine();
+            const w = getLocalWorlds()[n].blocks;
+            if(Object.keys(w).length>0) { for(let k in w) { const[x,y,z]=k.split(',').map(Number); createBlock(x,y,z,materials[w[k]], false); }}
+            else generateBasicTerrain();
+        }
+
+        // --- СЕТЕВАЯ ИГРА: ХОСТ СИСТЕМА ---
+        function getMyServers() { const d = localStorage.getItem('mc_servers'); return d ? JSON.parse(d) : []; }
+        function saveMyServers(s) { localStorage.setItem('mc_servers', JSON.stringify(s)); }
+
+        window.renderServerList = () => {
+            const l = document.getElementById('server-list'); l.innerHTML = ''; 
+            const s = getMyServers();
+            if (s.length === 0) { l.innerHTML = '<div style="padding:10px; color:#aaa;">Нет активных серверов</div>'; return; }
             
-            const hasData = Object.keys(worldDataToLoad).length > 0;
-            if (hasData) {
-                for (let key in worldDataToLoad) {
-                    const [x, y, z] = key.split(',').map(Number);
-                    createBlock(x, y, z, materials[worldDataToLoad[key]], false);
-                }
-            } else {
-                generateBasicTerrain();
-            }
-        }
+            s.forEach((code, idx) => {
+                const d = document.createElement('div'); d.className='world-item';
+                // Проверяем, жив ли сервер (визуально)
+                d.innerHTML = `<span>Лобби: ${code}</span> <span class="del-btn" onclick="killServer('${code}')">ВЫКЛЮЧИТЬ</span>`;
+                d.onclick=(e)=>{if(!e.target.classList.contains('del-btn')) { document.getElementById('lobby-code-input').value = code; }};
+                l.appendChild(d);
+            });
+        };
 
-        function generateBasicTerrain() {
-            const floorRadius = 12;
-            for (let y = -5; y < 0; y++) {
-                for (let x = -floorRadius; x < floorRadius; x++) {
-                    for (let z = -floorRadius; z < floorRadius; z++) {
-                        createBlock(x, y, z, materials[1]);
-                    }
-                }
-            }
-            for (let x = -floorRadius; x < floorRadius; x++) {
-                for (let z = -floorRadius; z < floorRadius; z++) {
-                    createBlock(x, 0, z, materials[0]);
-                }
-            }
-        }
-
-        // --- МУЛЬТИПЛЕЕР ---
         window.createLobby = () => {
             const code = Math.floor(1000 + Math.random() * 9000).toString();
+            
+            // Сохраняем в "Мои сервера"
+            const s = getMyServers(); s.push(code); saveMyServers(s);
+            
+            isHost = true; // Мы создатель!
             startMultiplayer(code);
+        };
+
+        window.killServer = (code) => {
+            if(!confirm("Выключить этот сервер? Все игроки вылетят.")) return;
+            // Удаляем из Firebase
+            remove(ref(db, `lobbies/${code}`)).then(() => {
+                // Удаляем из локального списка
+                const s = getMyServers().filter(c => c !== code);
+                saveMyServers(s);
+                renderServerList();
+            });
         };
 
         window.joinLobby = () => {
             const code = document.getElementById('lobby-code-input').value;
-            if (code) startMultiplayer(code);
+            if(!code) return alert("Введите код");
+            
+            isHost = false; // Мы гость
+            // Проверяем, существует ли сервер
+            get(ref(db, `lobbies/${code}`)).then(snapshot => {
+                if (snapshot.exists()) {
+                    startMultiplayer(code);
+                } else {
+                    alert("Сервер не найден! Возможно, хост вышел.");
+                }
+            });
         };
 
         function startMultiplayer(code) {
@@ -385,16 +353,33 @@
 
             startEngine();
             document.getElementById('lobby-info').style.display = 'block';
-            document.getElementById('lobby-info').innerText = "Лобби: " + code;
+            document.getElementById('lobby-info').innerText = isHost ? `Лобби: ${code} (HOST)` : `Лобби: ${code}`;
 
+            // СЛУШАТЕЛЬ СМЕРТИ СЕРВЕРА
+            // Если лобби удаляется (хост нажал ВЫКЛ или вышел), нас выкидывает
+            lobbyRefCheck = onValue(ref(db, `lobbies/${currentLobbyId}`), (snapshot) => {
+                if (!snapshot.exists()) {
+                    quitToTitle(true, "СЕРВЕР ЗАКРЫТ СОЗДАТЕЛЕМ");
+                }
+            });
+
+            // Подключение игрока
             playerRef = ref(db, `lobbies/${currentLobbyId}/players/${playerId}`);
             onDisconnect(playerRef).remove();
 
+            // ЕСЛИ МЫ ХОСТ: При нашем дисконнекте удаляется ВСЁ ЛОББИ
+            if (isHost) {
+                const lobbyRef = ref(db, `lobbies/${currentLobbyId}`);
+                onDisconnect(lobbyRef).remove();
+            }
+
+            // Синхронизация игроков
             const playersRef = ref(db, `lobbies/${currentLobbyId}/players`);
             onChildAdded(playersRef, (snap) => { if (snap.key !== playerId) createOtherPlayer(snap.key, snap.val()); });
             onChildChanged(playersRef, (snap) => { if (snap.key !== playerId && otherPlayers[snap.key]) updateOtherPlayer(snap.key, snap.val()); });
             onChildRemoved(playersRef, (snap) => { if (otherPlayers[snap.key]) { scene.remove(otherPlayers[snap.key].mesh); delete otherPlayers[snap.key]; } });
 
+            // Синхронизация мира
             worldRef = ref(db, `lobbies/${currentLobbyId}/world`);
             onChildAdded(worldRef, (snap) => {
                 const [x, y, z] = snap.key.split('_').map(Number);
@@ -406,9 +391,7 @@
                 if (mesh) removeBlockLocal(mesh);
             });
             
-            setTimeout(() => {
-                if (Object.keys(worldData).length === 0) generateBasicTerrain();
-            }, 1000);
+            setTimeout(() => { if (Object.keys(worldData).length === 0) generateBasicTerrain(); }, 1000);
         }
 
         // --- ДВИЖОК ---
@@ -417,70 +400,59 @@
             document.getElementById('game-ui').style.display = 'block';
             
             init();
-            
             controls.pointerSpeed = settings.sensitivity;
-            scene.fog.far = settings.renderDist;
-            camera.far = settings.renderDist * 2;
+            scene.fog.far = settings.renderDist; camera.far = settings.renderDist * 2;
             
-            isGameRunning = true;
-            isPaused = false;
+            isGameRunning = true; isPaused = false;
             animate();
-            
-            setTimeout(() => { alert("Нажми ОК и кликни, чтобы играть."); }, 100);
+            setTimeout(() => { alert("Готово! Кликни для игры."); }, 100);
         }
 
-        window.resumeGame = () => {
-            document.getElementById('pause-menu').style.display = 'none';
-            controls.lock();
-        };
+        window.resumeGame = () => { document.getElementById('pause-menu').style.display = 'none'; controls.lock(); };
 
-        window.quitToTitle = () => {
-            if (!isMultiplayer && currentWorldName) {
-                const worlds = getLocalWorlds();
-                const blocksToSave = {};
+        window.quitToTitle = (forced = false, msg = "") => {
+            // Если хост выходит сам - удаляем сервер из списка "Мои сервера"
+            if (isHost && isMultiplayer && !forced) {
+                // Триггерится удаление лобби в Firebase (вручную или через onDisconnect), 
+                // но лучше удалить явно сейчас
+                remove(ref(db, `lobbies/${currentLobbyId}`));
+                const s = getMyServers().filter(c => c !== currentLobbyId);
+                saveMyServers(s);
+            }
+
+            if (!isMultiplayer && currentWorldName && !forced) {
+                const worlds = getLocalWorlds(); const blocksToSave = {};
                 for (let key in worldData) {
                     const mesh = objectsMap[key];
-                    if (mesh) {
-                        const matIndex = materials.indexOf(mesh.material);
-                        blocksToSave[key] = matIndex;
-                    }
+                    if (mesh) blocksToSave[key] = materials.indexOf(mesh.material);
                 }
-                worlds[currentWorldName].blocks = blocksToSave;
-                saveLocalWorlds(worlds);
+                worlds[currentWorldName].blocks = blocksToSave; saveLocalWorlds(worlds);
             }
+
+            if (forced) alert(msg);
             isGameRunning = false;
             location.reload(); 
         };
+
+        function generateBasicTerrain() {
+            const floorRadius = 12;
+            for (let y = -5; y < 0; y++) { for (let x = -floorRadius; x < floorRadius; x++) { for (let z = -floorRadius; z < floorRadius; z++) { createBlock(x, y, z, materials[1]); }}}
+            for (let x = -floorRadius; x < floorRadius; x++) { for (let z = -floorRadius; z < floorRadius; z++) { createBlock(x, 0, z, materials[0]); }}
+        }
 
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB);
             scene.fog = new THREE.Fog(0x87CEEB, 10, 60);
-
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.005, 1000);
             camera.position.set(0, 15, 0);
-
-            const ambientLight = new THREE.AmbientLight(0xcccccc);
-            scene.add(ambientLight);
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-            dirLight.position.set(10, 20, 10);
-            scene.add(dirLight);
+            const ambientLight = new THREE.AmbientLight(0xcccccc); scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6); dirLight.position.set(10, 20, 10); scene.add(dirLight);
 
             controls = new PointerLockControls(camera, document.body);
-
-            controls.addEventListener('lock', () => {
-                isPaused = false;
-                document.getElementById('pause-menu').style.display = 'none';
-                document.getElementById('inventory-screen').style.display = 'none';
-                isInventoryOpen = false;
-            });
-
-            controls.addEventListener('unlock', () => {
-                if (isInventoryOpen) return;
-                isPaused = true;
-                document.getElementById('pause-menu').style.display = 'flex';
-            });
-
+            controls.addEventListener('lock', () => { isPaused = false; document.getElementById('pause-menu').style.display = 'none'; document.getElementById('inventory-screen').style.display = 'none'; isInventoryOpen = false; });
+            controls.addEventListener('unlock', () => { if (isInventoryOpen) return; isPaused = true; document.getElementById('pause-menu').style.display = 'flex'; });
+            
             document.addEventListener('click', (e) => {
                 if (!isGameRunning || isPaused || isInventoryOpen) return;
                 if (e.target.closest('.mc-btn') || e.target.closest('#inventory-screen') || e.target.closest('#pause-menu')) return;
@@ -490,25 +462,17 @@
             const loader = new THREE.TextureLoader();
             const fallbackMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
             try {
-                const loadedTextures = textureUrls.map(url => {
-                    const t = loader.load(url); t.magFilter = THREE.NearestFilter; return t;
-                });
+                const loadedTextures = textureUrls.map(url => { const t = loader.load(url); t.magFilter = THREE.NearestFilter; return t; });
                 materials = loadedTextures.map(t => new THREE.MeshLambertMaterial({ map: t }));
                 initInventoryUI(); updateHotbarUI();
             } catch (e) { materials = [fallbackMat]; }
 
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
-            document.addEventListener('wheel', onWheel);
-            document.addEventListener('mousemove', onMouseMoveInv);
+            document.addEventListener('keydown', onKeyDown); document.addEventListener('keyup', onKeyUp);
+            document.addEventListener('wheel', onWheel); document.addEventListener('mousemove', onMouseMoveInv);
             document.addEventListener('mousedown', onMouseClick);
-
             raycaster = new THREE.Raycaster(); raycaster.far = 5;
-            
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
-            window.addEventListener('resize', onWindowResize);
+            renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement); window.addEventListener('resize', onWindowResize);
         }
 
         function onKeyDown(e) {
@@ -516,126 +480,53 @@
             switch (e.code) {
                 case 'KeyE':
                     if (isPaused) return;
-                    if (isInventoryOpen) {
-                        isInventoryOpen = false;
-                        document.getElementById('inventory-screen').style.display = 'none';
-                        controls.lock();
-                    } else {
-                        isInventoryOpen = true;
-                        document.getElementById('inventory-screen').style.display = 'flex';
-                        controls.unlock();
-                    }
+                    if (isInventoryOpen) { isInventoryOpen = false; document.getElementById('inventory-screen').style.display = 'none'; controls.lock(); }
+                    else { isInventoryOpen = true; document.getElementById('inventory-screen').style.display = 'flex'; controls.unlock(); }
                     break;
-                case 'KeyW': moveForward = true; break;
-                case 'KeyA': moveLeft = true; break;
-                case 'KeyS': moveBackward = true; break;
-                case 'KeyD': moveRight = true; break;
+                case 'KeyW': moveForward = true; break; case 'KeyA': moveLeft = true; break; case 'KeyS': moveBackward = true; break; case 'KeyD': moveRight = true; break;
                 case 'Space': if (canJump && !isCrouching) { velocity.y += JUMP_FORCE; canJump = false; } break;
-                case 'ControlLeft': isSprinting = true; break;
-                case 'ShiftLeft': isCrouching = true; break;
-                case 'Digit1': selectSlot(0); break;
-                case 'Digit2': selectSlot(1); break;
-                case 'Digit3': selectSlot(2); break;
-                case 'Digit4': selectSlot(3); break;
-                case 'Digit5': selectSlot(4); break;
+                case 'ControlLeft': isSprinting = true; break; case 'ShiftLeft': isCrouching = true; break;
+                case 'Digit1': selectSlot(0); break; case 'Digit2': selectSlot(1); break; case 'Digit3': selectSlot(2); break; case 'Digit4': selectSlot(3); break; case 'Digit5': selectSlot(4); break;
             }
         }
         function onKeyUp(e) {
-            switch (e.code) {
-                case 'KeyW': moveForward = false; break;
-                case 'KeyA': moveLeft = false; break;
-                case 'KeyS': moveBackward = false; break;
-                case 'KeyD': moveRight = false; break;
-                case 'ControlLeft': isSprinting = false; break;
-                case 'ShiftLeft': isCrouching = false; break;
-            }
+            switch (e.code) { case 'KeyW': moveForward = false; break; case 'KeyA': moveLeft = false; break; case 'KeyS': moveBackward = false; break; case 'KeyD': moveRight = false; break; case 'ControlLeft': isSprinting = false; break; case 'ShiftLeft': isCrouching = false; break; }
         }
-        function onWheel(e) {
-            if (isPaused || isInventoryOpen) return;
-            if (e.deltaY > 0) { let s = selectedSlot + 1; if (s > 4) s = 0; selectSlot(s); }
-            else { let s = selectedSlot - 1; if (s < 0) s = 4; selectSlot(s); }
-        }
+        function onWheel(e) { if (isPaused || isInventoryOpen) return; if (e.deltaY > 0) { let s = selectedSlot + 1; if (s > 4) s = 0; selectSlot(s); } else { let s = selectedSlot - 1; if (s < 0) s = 4; selectSlot(s); } }
         
         function initInventoryUI() {
-            const grid = document.getElementById('creative-grid');
-            grid.innerHTML = '';
+            const grid = document.getElementById('creative-grid'); grid.innerHTML = '';
             textureUrls.forEach((url, index) => {
-                const el = document.createElement('div'); el.className = 'inv-slot';
-                el.style.backgroundImage = `url(${url})`;
-                el.onclick = () => { holdingBlockIndex = index; updateCursorItem(url); };
-                grid.appendChild(el);
+                const el = document.createElement('div'); el.className = 'inv-slot'; el.style.backgroundImage = `url(${url})`;
+                el.onclick = () => { holdingBlockIndex = index; updateCursorItem(url); }; grid.appendChild(el);
             });
-            for(let i=0; i<5; i++) {
-                document.getElementById(`slot-${i}`).onclick = () => {
-                    if (isInventoryOpen && holdingBlockIndex!==null) {
-                        hotbarContent[i] = holdingBlockIndex; updateHotbarUI(); holdingBlockIndex=null; updateCursorItem(null);
-                    }
-                }
-            }
+            for(let i=0; i<5; i++) { document.getElementById(`slot-${i}`).onclick = () => { if (isInventoryOpen && holdingBlockIndex!==null) { hotbarContent[i] = holdingBlockIndex; updateHotbarUI(); holdingBlockIndex=null; updateCursorItem(null); } } }
         }
-        function updateCursorItem(url) {
-            const c = document.getElementById('cursor-item');
-            if(url) { c.style.display='block'; c.style.backgroundImage=`url(${url})`; } else c.style.display='none';
-        }
-        function updateHotbarUI() {
-            for(let i=0; i<5; i++) {
-                const s = document.getElementById(`slot-${i}`);
-                if(hotbarContent[i]!==null) s.style.backgroundImage=`url(${textureUrls[hotbarContent[i]]})`;
-                else s.style.backgroundImage='none';
-            }
-        }
-        function onMouseMoveInv(e) {
-            if(isInventoryOpen && holdingBlockIndex!==null) {
-                const c = document.getElementById('cursor-item');
-                c.style.left = e.clientX+'px'; c.style.top = e.clientY+'px';
-            }
-        }
-        function selectSlot(i) {
-            selectedSlot = i;
-            document.querySelectorAll('.slot').forEach(e=>e.classList.remove('active'));
-            document.getElementById(`slot-${i}`).classList.add('active');
-        }
+        function updateCursorItem(url) { const c = document.getElementById('cursor-item'); if(url) { c.style.display='block'; c.style.backgroundImage=`url(${url})`; } else c.style.display='none'; }
+        function updateHotbarUI() { for(let i=0; i<5; i++) { const s = document.getElementById(`slot-${i}`); if(hotbarContent[i]!==null) s.style.backgroundImage=`url(${textureUrls[hotbarContent[i]]})`; else s.style.backgroundImage='none'; } }
+        function onMouseMoveInv(e) { if(isInventoryOpen && holdingBlockIndex!==null) { const c = document.getElementById('cursor-item'); c.style.left = e.clientX+'px'; c.style.top = e.clientY+'px'; } }
+        function selectSlot(i) { selectedSlot = i; document.querySelectorAll('.slot').forEach(e=>e.classList.remove('active')); document.getElementById(`slot-${i}`).classList.add('active'); }
 
         function createBlock(x, y, z, mat, isNet=false) {
-            const mesh = new THREE.Mesh(cubeGeo, mat);
-            mesh.position.set(x,y,z);
-            scene.add(mesh); objects.push(mesh);
-            const key = `${x},${y},${z}`;
-            worldData[key] = true; objectsMap[key] = mesh;
-            
-            if (isMultiplayer && !isNet) {
-                set(ref(db, `lobbies/${currentLobbyId}/world/${x}_${y}_${z}`), materials.indexOf(mat));
-            }
+            const mesh = new THREE.Mesh(cubeGeo, mat); mesh.position.set(x,y,z); scene.add(mesh); objects.push(mesh);
+            const key = `${x},${y},${z}`; worldData[key] = true; objectsMap[key] = mesh;
+            if (isMultiplayer && !isNet) set(ref(db, `lobbies/${currentLobbyId}/world/${x}_${y}_${z}`), materials.indexOf(mat));
         }
-        
         function removeBlockLocal(obj) {
-            scene.remove(obj);
-            objects.splice(objects.indexOf(obj), 1);
+            scene.remove(obj); objects.splice(objects.indexOf(obj), 1);
             const x = Math.round(obj.position.x), y = Math.round(obj.position.y), z = Math.round(obj.position.z);
-            const key = `${x},${y},${z}`;
-            delete worldData[key]; delete objectsMap[key];
+            const key = `${x},${y},${z}`; delete worldData[key]; delete objectsMap[key];
         }
-
         function onMouseClick(e) {
             if (isPaused || isInventoryOpen || !controls.isLocked) return;
-            raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
-            const intersects = raycaster.intersectObjects(objects);
+            raycaster.setFromCamera(new THREE.Vector2(0,0), camera); const intersects = raycaster.intersectObjects(objects);
             if (intersects.length > 0) {
-                const i = intersects[0];
-                if (i.distance > 5) return;
-                if (e.button === 0) {
-                    removeBlockLocal(i.object);
-                    if (isMultiplayer) {
-                        const x=Math.round(i.object.position.x), y=Math.round(i.object.position.y), z=Math.round(i.object.position.z);
-                        remove(ref(db, `lobbies/${currentLobbyId}/world/${x}_${y}_${z}`));
-                    }
-                } else if (e.button === 2) {
-                    const matIdx = hotbarContent[selectedSlot];
-                    if (matIdx === null) return;
+                const i = intersects[0]; if (i.distance > 5) return;
+                if (e.button === 0) { removeBlockLocal(i.object); if (isMultiplayer) remove(ref(db, `lobbies/${currentLobbyId}/world/${Math.round(i.object.position.x)}_${Math.round(i.object.position.y)}_${Math.round(i.object.position.z)}`)); }
+                else if (e.button === 2) {
+                    const matIdx = hotbarContent[selectedSlot]; if (matIdx === null) return;
                     const p = i.object.position.clone().add(i.face.normal);
-                    const dx = Math.abs(camera.position.x - p.x);
-                    const dz = Math.abs(camera.position.z - p.z);
-                    const feet = camera.position.y - 1.6;
+                    const dx = Math.abs(camera.position.x - p.x), dz = Math.abs(camera.position.z - p.z), feet = camera.position.y - 1.6;
                     if (dx<0.7 && dz<0.7 && feet < p.y+0.5-0.2) return;
                     createBlock(p.x, p.y, p.z, materials[matIdx]);
                 }
@@ -643,117 +534,59 @@
         }
 
         function createOtherPlayer(id, data) {
-            const g = new THREE.BoxGeometry(0.6, 1.8, 0.6);
-            const m = new THREE.MeshLambertMaterial({ color: 0xff0000 });
-            const mesh = new THREE.Mesh(g, m);
-            const hg = new THREE.BoxGeometry(0.4, 0.4, 0.4);
-            const hm = new THREE.MeshLambertMaterial({ color: 0xffccaa });
+            const g = new THREE.BoxGeometry(0.6, 1.8, 0.6); const m = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+            const mesh = new THREE.Mesh(g, m); const hg = new THREE.BoxGeometry(0.4, 0.4, 0.4); const hm = new THREE.MeshLambertMaterial({ color: 0xffccaa });
             const head = new THREE.Mesh(hg, hm); head.position.y = 0.9; mesh.add(head);
-            mesh.position.set(data.x, data.y-0.9, data.z);
-            scene.add(mesh); otherPlayers[id] = { mesh: mesh };
+            mesh.position.set(data.x, data.y-0.9, data.z); scene.add(mesh); otherPlayers[id] = { mesh: mesh };
         }
-        function updateOtherPlayer(id, data) {
-            const p = otherPlayers[id];
-            p.mesh.position.set(data.x, data.y-0.9, data.z);
-            p.mesh.rotation.y = data.rotation;
-        }
-        function uploadPos() {
-            if (isMultiplayer && playerRef) set(playerRef, { x:camera.position.x, y:camera.position.y, z:camera.position.z, rotation:camera.rotation.y });
-        }
+        function updateOtherPlayer(id, data) { const p = otherPlayers[id]; p.mesh.position.set(data.x, data.y-0.9, data.z); p.mesh.rotation.y = data.rotation; }
+        function uploadPos() { if (isMultiplayer && playerRef) set(playerRef, { x:camera.position.x, y:camera.position.y, z:camera.position.z, rotation:camera.rotation.y }); }
 
         function checkCol(nx, nz) {
             const r = 0.3, yf = Math.floor(camera.position.y-1.6+0.5), yh = Math.floor(camera.position.y-0.1);
-            const keys = [
-                `${Math.round(nx+r)},${yf},${Math.round(nz+r)}`, `${Math.round(nx+r)},${yh},${Math.round(nz+r)}`,
-                `${Math.round(nx-r)},${yf},${Math.round(nz+r)}`, `${Math.round(nx-r)},${yh},${Math.round(nz+r)}`,
-                `${Math.round(nx+r)},${yf},${Math.round(nz-r)}`, `${Math.round(nx+r)},${yh},${Math.round(nz-r)}`,
-                `${Math.round(nx-r)},${yf},${Math.round(nz-r)}`, `${Math.round(nx-r)},${yh},${Math.round(nz-r)}`
-            ];
+            const keys = [`${Math.round(nx+r)},${yf},${Math.round(nz+r)}`, `${Math.round(nx+r)},${yh},${Math.round(nz+r)}`, `${Math.round(nx-r)},${yf},${Math.round(nz+r)}`, `${Math.round(nx-r)},${yh},${Math.round(nz+r)}`, `${Math.round(nx+r)},${yf},${Math.round(nz-r)}`, `${Math.round(nx+r)},${yh},${Math.round(nz-r)}`, `${Math.round(nx-r)},${yf},${Math.round(nz-r)}`, `${Math.round(nx-r)},${yh},${Math.round(nz-r)}`];
             return keys.some(k => worldData[k]);
         }
         function checkG(x,y,z) {
             const r=0.3, by=Math.round(y-0.5);
-            const keys = [
-                `${Math.round(x)},${by},${Math.round(z)}`,
-                `${Math.round(x+r)},${by},${Math.round(z+r)}`, `${Math.round(x-r)},${by},${Math.round(z+r)}`,
-                `${Math.round(x+r)},${by},${Math.round(z-r)}`, `${Math.round(x-r)},${by},${Math.round(z-r)}`
-            ];
+            const keys = [`${Math.round(x)},${by},${Math.round(z)}`, `${Math.round(x+r)},${by},${Math.round(z+r)}`, `${Math.round(x-r)},${by},${Math.round(z+r)}`, `${Math.round(x+r)},${by},${Math.round(z-r)}`, `${Math.round(x-r)},${by},${Math.round(z-r)}`];
             return keys.some(k => worldData[k]);
         }
 
         function animate() {
-            requestAnimationFrame(animate);
-            if (!isGameRunning) return;
+            requestAnimationFrame(animate); if (!isGameRunning) return;
+            const time = performance.now(); const delta = Math.min((time - prevTime) / 1000, 0.05);
 
-            const time = performance.now();
-            const delta = Math.min((time - prevTime) / 1000, 0.05);
-
-            let updatePhysics = false;
-            let processInput = false;
-
-            if (isMultiplayer) {
-                updatePhysics = true; 
-                if (controls.isLocked && !isInventoryOpen && !isPaused) processInput = true;
-            } else {
-                if (!isPaused && !isInventoryOpen && controls.isLocked) {
-                    updatePhysics = true;
-                    processInput = true;
-                }
-            }
+            let updatePhysics = false, processInput = false;
+            if (isMultiplayer) { updatePhysics = true; if (controls.isLocked && !isInventoryOpen && !isPaused) processInput = true; }
+            else { if (!isPaused && !isInventoryOpen && controls.isLocked) { updatePhysics = true; processInput = true; } }
 
             if (updatePhysics) {
-                velocity.x -= velocity.x * 10.0 * delta;
-                velocity.z -= velocity.z * 10.0 * delta;
-                velocity.y -= GRAVITY * delta;
-
+                velocity.x -= velocity.x * 10.0 * delta; velocity.z -= velocity.z * 10.0 * delta; velocity.y -= GRAVITY * delta;
                 if (processInput) {
-                    direction.z = Number(moveForward) - Number(moveBackward);
-                    direction.x = Number(moveRight) - Number(moveLeft);
-                    direction.normalize();
+                    direction.z = Number(moveForward) - Number(moveBackward); direction.x = Number(moveRight) - Number(moveLeft); direction.normalize();
                     let spd = isCrouching ? CROUCH_SPEED : (isSprinting ? SPRINT_SPEED : WALK_SPEED);
-                    if (moveForward || moveBackward) velocity.z -= direction.z * spd * delta;
-                    if (moveLeft || moveRight) velocity.x -= direction.x * spd * delta;
+                    if (moveForward || moveBackward) velocity.z -= direction.z * spd * delta; if (moveLeft || moveRight) velocity.x -= direction.x * spd * delta;
                 }
-
                 const mx = -velocity.x * delta, mz = -velocity.z * delta;
-                controls.moveRight(mx);
-                if (checkCol(camera.position.x, camera.position.z)) { controls.moveRight(-mx); velocity.x = 0; }
-                controls.moveForward(mz);
-                if (checkCol(camera.position.x, camera.position.z)) { controls.moveForward(-mz); velocity.z = 0; }
+                controls.moveRight(mx); if (checkCol(camera.position.x, camera.position.z)) { controls.moveRight(-mx); velocity.x = 0; }
+                controls.moveForward(mz); if (checkCol(camera.position.x, camera.position.z)) { controls.moveForward(-mz); velocity.z = 0; }
 
                 let remY = velocity.y * delta;
                 while (Math.abs(remY) > 0) {
-                    const step = Math.sign(remY) * Math.min(Math.abs(remY), 0.1);
-                    camera.position.y += step;
+                    const step = Math.sign(remY) * Math.min(Math.abs(remY), 0.1); camera.position.y += step;
                     const fy = camera.position.y - 1.6;
-                    if (step < 0 && checkG(camera.position.x, fy, camera.position.z)) {
-                        if (fy < Math.round(fy-0.5)+0.5+0.1) {
-                            camera.position.y = Math.round(fy-0.5)+0.5+1.6;
-                            velocity.y = 0; canJump = true; remY = 0; break;
-                        }
-                    }
-                    if (step > 0 && checkCol(camera.position.x, camera.position.z)) { 
-                         velocity.y = 0; remY = 0; break;
-                    }
+                    if (step < 0 && checkG(camera.position.x, fy, camera.position.z)) { if (fy < Math.round(fy-0.5)+0.5+0.1) { camera.position.y = Math.round(fy-0.5)+0.5+1.6; velocity.y = 0; canJump = true; remY = 0; break; } }
+                    if (step > 0 && checkCol(camera.position.x, camera.position.z)) { velocity.y = 0; remY = 0; break; }
                     remY -= step; if(Math.abs(step)<0.001) break;
                 }
                 if (camera.position.y < -30) { camera.position.set(0, 20, 0); velocity.y = 0; }
-
-                if (isMultiplayer && (time - lastUploadTime > 150)) {
-                    uploadPos(); lastUploadTime = time;
-                }
+                if (isMultiplayer && (time - lastUploadTime > 150)) { uploadPos(); lastUploadTime = time; }
                 prevTime = time;
-            } else {
-                prevTime = performance.now();
-            }
+            } else { prevTime = performance.now(); }
             renderer.render(scene, camera);
         }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
+        function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
     </script>
 </body>
 </html>
