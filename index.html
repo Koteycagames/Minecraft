@@ -2,26 +2,25 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: Worlds & Settings</title>
+    <title>Minecraft JS: Worlds & Settings (Fixed)</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
         /* --- UI СЛОИ --- */
-        #game-ui { display: none; } /* Интерфейс во время игры */
+        #game-ui { display: none; } 
         .menu-screen { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: url('./textures/dirt.png'); /* Фон грязи */
+            background: url('./textures/dirt.png'); 
             display: none; flex-direction: column;
             justify-content: center; align-items: center;
             z-index: 999;
         }
-        /* Затемнение фона меню */
         .menu-screen::before {
             content: ""; position: absolute; top:0; left:0; width:100%; height:100%;
             background: rgba(0,0,0,0.75); z-index: -1;
         }
 
-        /* --- СТИЛИ КНОПОК MINECRAFT --- */
+        /* --- СТИЛИ КНОПОК --- */
         .mc-btn {
             width: 400px; height: 40px; margin: 5px;
             font-family: sans-serif; font-size: 16px; color: #ddd; text-shadow: 1px 1px #000;
@@ -35,13 +34,11 @@
         h1 { color: #ddd; font-size: 40px; text-shadow: 2px 2px #000; margin-bottom: 20px; font-family: sans-serif; }
         h2 { color: #aaa; font-size: 20px; margin-bottom: 10px; font-family: sans-serif; }
 
-        /* Ввод текста */
         .mc-input {
             width: 380px; height: 30px; margin-bottom: 10px;
             background: #000; border: 1px solid #aaa; color: #fff; padding: 5px; font-size: 16px;
         }
 
-        /* Список миров */
         #world-list {
             width: 400px; max-height: 200px; overflow-y: auto;
             background: rgba(0,0,0,0.5); border: 1px solid #555; margin-bottom: 10px;
@@ -53,7 +50,6 @@
         .world-item:hover { background: rgba(255,255,255,0.1); }
         .del-btn { color: red; cursor: pointer; font-weight: bold; }
 
-        /* Ползунки настроек */
         .setting-row { color: white; margin: 10px; display: flex; flex-direction: column; align-items: center; }
         input[type=range] { width: 300px; }
 
@@ -85,7 +81,6 @@
             background-size: cover; display: none; border: 2px solid yellow;
         }
         
-        /* Меню инвентаря (внутри игры) */
         #inventory-screen {
             display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.85); z-index: 100; 
@@ -101,7 +96,6 @@
             cursor: pointer; background-size: cover;
         }
 
-        /* Меню Паузы (прозрачное) */
         #pause-menu {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.6); 
@@ -109,7 +103,6 @@
             justify-content: center; align-items: center;
             z-index: 998; backdrop-filter: blur(2px);
         }
-
     </style>
 </head>
 <body>
@@ -221,7 +214,7 @@
         // Состояние игры
         let isMultiplayer = false;
         let currentLobbyId = null;
-        let currentWorldName = null; // Для сохранения
+        let currentWorldName = null;
         let isPaused = false;
         let isGameRunning = false;
         let playerId = 'player_' + Math.random().toString(36).substr(2, 9);
@@ -237,6 +230,12 @@
 
         // Настройки
         let settings = { sensitivity: 0.5, renderDist: 60 };
+
+        // ИСПРАВЛЕННАЯ ПЕРЕМЕННАЯ (была ошибка тут)
+        let isInventoryOpen = false;
+        let holdingBlockIndex = null;
+        let hotbarContent = [null,null,null,null,null];
+        let selectedSlot = 0;
 
         // Константы
         const WALK_SPEED = 30.0, SPRINT_SPEED = 50.0, CROUCH_SPEED = 10.0, JUMP_FORCE = 9, GRAVITY = 24.0;
@@ -270,7 +269,6 @@
                 camera.updateProjectionMatrix();
             }
             
-            // Если мы пришли из игры
             if (isGameRunning) {
                 document.getElementById('screen-settings').style.display = 'none';
                 document.getElementById('pause-menu').style.display = 'flex';
@@ -284,18 +282,14 @@
             document.getElementById('screen-settings').style.display = 'flex';
         };
 
-        // --- LOCAL STORAGE (МИРЫ) ---
+        // --- LOCAL STORAGE ---
         function getLocalWorlds() {
             const data = localStorage.getItem('mc_worlds');
             return data ? JSON.parse(data) : {};
         }
 
         function saveLocalWorlds(worlds) {
-            try {
-                localStorage.setItem('mc_worlds', JSON.stringify(worlds));
-            } catch (e) {
-                alert("Ошибка сохранения! Память переполнена.");
-            }
+            try { localStorage.setItem('mc_worlds', JSON.stringify(worlds)); } catch (e) { alert("Память переполнена."); }
         }
 
         window.createLocalWorld = () => {
@@ -304,10 +298,8 @@
             const worlds = getLocalWorlds();
             if (worlds[name]) return alert("Мир с таким именем уже есть!");
 
-            worlds[name] = { created: Date.now(), blocks: {} }; // Пустой мир
+            worlds[name] = { created: Date.now(), blocks: {} };
             saveLocalWorlds(worlds);
-            
-            // Запускаем
             loadLocalWorld(name);
         };
 
@@ -348,7 +340,6 @@
             
             startEngine();
             
-            // Генерируем или загружаем
             const hasData = Object.keys(worldDataToLoad).length > 0;
             if (hasData) {
                 for (let key in worldDataToLoad) {
@@ -356,7 +347,7 @@
                     createBlock(x, y, z, materials[worldDataToLoad[key]], false);
                 }
             } else {
-                generateBasicTerrain(); // Если мир новый
+                generateBasicTerrain();
             }
         }
 
@@ -365,13 +356,13 @@
             for (let y = -5; y < 0; y++) {
                 for (let x = -floorRadius; x < floorRadius; x++) {
                     for (let z = -floorRadius; z < floorRadius; z++) {
-                        createBlock(x, y, z, materials[1]); // Грязь
+                        createBlock(x, y, z, materials[1]);
                     }
                 }
             }
             for (let x = -floorRadius; x < floorRadius; x++) {
                 for (let z = -floorRadius; z < floorRadius; z++) {
-                    createBlock(x, 0, z, materials[0]); // Трава
+                    createBlock(x, 0, z, materials[0]);
                 }
             }
         }
@@ -390,13 +381,12 @@
         function startMultiplayer(code) {
             isMultiplayer = true;
             currentLobbyId = code;
-            currentWorldName = null; // В сети не сохраняем локально
+            currentWorldName = null;
 
             startEngine();
             document.getElementById('lobby-info').style.display = 'block';
             document.getElementById('lobby-info').innerText = "Лобби: " + code;
 
-            // Подключение Firebase
             playerRef = ref(db, `lobbies/${currentLobbyId}/players/${playerId}`);
             onDisconnect(playerRef).remove();
 
@@ -416,21 +406,18 @@
                 if (mesh) removeBlockLocal(mesh);
             });
             
-            // Если мир пустой в базе, генерируем базу (упрощенно: каждый клиент генерит, если нет блоков)
-            // Для стабильности в этом примере просто генерим стартовую площадку, если локально пусто
             setTimeout(() => {
                 if (Object.keys(worldData).length === 0) generateBasicTerrain();
             }, 1000);
         }
 
-        // --- ДВИЖОК (СТАРТ) ---
+        // --- ДВИЖОК ---
         function startEngine() {
             document.querySelectorAll('.menu-screen').forEach(el => el.style.display = 'none');
             document.getElementById('game-ui').style.display = 'block';
             
-            init(); // Three.js инит
+            init();
             
-            // Применяем настройки
             controls.pointerSpeed = settings.sensitivity;
             scene.fog.far = settings.renderDist;
             camera.far = settings.renderDist * 2;
@@ -439,7 +426,6 @@
             isPaused = false;
             animate();
             
-            // Авто-захват через небольшой таймаут
             setTimeout(() => { alert("Нажми ОК и кликни, чтобы играть."); }, 100);
         }
 
@@ -449,14 +435,10 @@
         };
 
         window.quitToTitle = () => {
-            // Сохранение перед выходом (Одиночка)
             if (!isMultiplayer && currentWorldName) {
                 const worlds = getLocalWorlds();
-                // Собираем данные блоков
                 const blocksToSave = {};
                 for (let key in worldData) {
-                    // key = "x,y,z". Нам нужно найти индекс материала.
-                    // Упрощение: ищем в объектах сцены. Это медленно, но работает для выхода.
                     const mesh = objectsMap[key];
                     if (mesh) {
                         const matIndex = materials.indexOf(mesh.material);
@@ -466,14 +448,10 @@
                 worlds[currentWorldName].blocks = blocksToSave;
                 saveLocalWorlds(worlds);
             }
-
-            // Очистка
             isGameRunning = false;
-            location.reload(); // Проще всего перезагрузить страницу для очистки памяти
+            location.reload(); 
         };
 
-
-        // --- INIT THREE.JS ---
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB);
@@ -490,7 +468,6 @@
 
             controls = new PointerLockControls(camera, document.body);
 
-            // Обработка ПАУЗЫ и ЛОКА
             controls.addEventListener('lock', () => {
                 isPaused = false;
                 document.getElementById('pause-menu').style.display = 'none';
@@ -499,22 +476,17 @@
             });
 
             controls.addEventListener('unlock', () => {
-                // Если мы открыли инвентарь (на E), то пауза не нужна
                 if (isInventoryOpen) return;
-                
-                // Иначе это ESC -> Пауза
                 isPaused = true;
                 document.getElementById('pause-menu').style.display = 'flex';
             });
 
-            // Клик для возврата в игру (если не пауза)
             document.addEventListener('click', (e) => {
                 if (!isGameRunning || isPaused || isInventoryOpen) return;
                 if (e.target.closest('.mc-btn') || e.target.closest('#inventory-screen') || e.target.closest('#pause-menu')) return;
                 controls.lock();
             });
             
-            // Текстуры
             const loader = new THREE.TextureLoader();
             const fallbackMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
             try {
@@ -525,12 +497,11 @@
                 initInventoryUI(); updateHotbarUI();
             } catch (e) { materials = [fallbackMat]; }
 
-            // Управление
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
             document.addEventListener('wheel', onWheel);
             document.addEventListener('mousemove', onMouseMoveInv);
-            document.addEventListener('mousedown', onMouseClick); // Стройка
+            document.addEventListener('mousedown', onMouseClick);
 
             raycaster = new THREE.Raycaster(); raycaster.far = 5;
             
@@ -540,7 +511,6 @@
             window.addEventListener('resize', onWindowResize);
         }
 
-        // --- УПРАВЛЕНИЕ ---
         function onKeyDown(e) {
             if (!isGameRunning) return;
             switch (e.code) {
@@ -586,12 +556,6 @@
             else { let s = selectedSlot - 1; if (s < 0) s = 4; selectSlot(s); }
         }
         
-        // --- ЛОГИКА ИГРЫ ---
-        let isInventoryOpenVar = false; // Локальный дубль для функций
-        let holdingBlockIndex = null;
-        let hotbarContent = [null,null,null,null,null];
-        let selectedSlot = 0;
-
         function initInventoryUI() {
             const grid = document.getElementById('creative-grid');
             grid.innerHTML = '';
@@ -669,19 +633,15 @@
                     const matIdx = hotbarContent[selectedSlot];
                     if (matIdx === null) return;
                     const p = i.object.position.clone().add(i.face.normal);
-                    
-                    // Collision check
                     const dx = Math.abs(camera.position.x - p.x);
                     const dz = Math.abs(camera.position.z - p.z);
                     const feet = camera.position.y - 1.6;
                     if (dx<0.7 && dz<0.7 && feet < p.y+0.5-0.2) return;
-
                     createBlock(p.x, p.y, p.z, materials[matIdx]);
                 }
             }
         }
 
-        // --- МУЛЬТИПЛЕЕР (ENTITY) ---
         function createOtherPlayer(id, data) {
             const g = new THREE.BoxGeometry(0.6, 1.8, 0.6);
             const m = new THREE.MeshLambertMaterial({ color: 0xff0000 });
@@ -701,7 +661,6 @@
             if (isMultiplayer && playerRef) set(playerRef, { x:camera.position.x, y:camera.position.y, z:camera.position.z, rotation:camera.rotation.y });
         }
 
-        // --- LOOP ---
         function checkCol(nx, nz) {
             const r = 0.3, yf = Math.floor(camera.position.y-1.6+0.5), yh = Math.floor(camera.position.y-0.1);
             const keys = [
@@ -729,14 +688,11 @@
             const time = performance.now();
             const delta = Math.min((time - prevTime) / 1000, 0.05);
 
-            // ЛОГИКА ПАУЗЫ
-            // В одиночке: если пауза - физика не работает.
-            // В мультиплеере: физика работает всегда, но управление отключено если пауза.
             let updatePhysics = false;
             let processInput = false;
 
             if (isMultiplayer) {
-                updatePhysics = true; // Мир всегда живет
+                updatePhysics = true; 
                 if (controls.isLocked && !isInventoryOpen && !isPaused) processInput = true;
             } else {
                 if (!isPaused && !isInventoryOpen && controls.isLocked) {
@@ -776,7 +732,7 @@
                             velocity.y = 0; canJump = true; remY = 0; break;
                         }
                     }
-                    if (step > 0 && checkCol(camera.position.x, camera.position.z)) { // Head check simplified
+                    if (step > 0 && checkCol(camera.position.x, camera.position.z)) { 
                          velocity.y = 0; remY = 0; break;
                     }
                     remY -= step; if(Math.abs(step)<0.001) break;
