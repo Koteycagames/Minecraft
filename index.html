@@ -2,11 +2,10 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: Accounts & Cloud Lobbies</title>
+    <title>Minecraft JS: Anti-Cheat System</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
-        /* --- UI COLORS & STYLES --- */
         :root { --mc-btn-bg: #777; --mc-btn-border-light: #aaa; --mc-btn-border-dark: #555; }
         
         .menu-screen { 
@@ -37,7 +36,6 @@
             background: #000; border: 1px solid #aaa; color: #fff; padding: 5px; font-size: 16px;
         }
 
-        /* Список серверов */
         #server-list, #world-list {
             width: 400px; max-height: 250px; overflow-y: auto;
             background: rgba(0,0,0,0.5); border: 1px solid #555; margin-bottom: 15px;
@@ -85,13 +83,28 @@
         .inv-slot { width: 50px; height: 50px; border: 2px solid #888; background: #8b8b8b; cursor: pointer; background-size: cover; }
         #cursor-item { position: absolute; width: 40px; height: 40px; pointer-events: none; z-index: 200; background-size: cover; display: none; border: 2px solid yellow; }
 
-        /* Auth Styles */
         .auth-form { display: flex; flex-direction: column; align-items: center; }
         .link-text { color: #aaa; text-decoration: underline; cursor: pointer; margin-top: 10px; font-size: 14px; }
         .error-msg { color: #ff5555; margin-bottom: 10px; font-weight: bold; display: none; }
+
+        /* ЭКРАН ANTI-CHEAT */
+        #screen-blocked {
+            background: #000 !important;
+            color: red;
+            text-align: center;
+        }
+        .error-code { font-size: 100px; margin: 0; }
+        .error-desc { font-size: 24px; color: white; margin-bottom: 30px; }
     </style>
 </head>
 <body>
+
+    <div id="screen-blocked" class="menu-screen">
+        <h1 class="error-code">⚠️</h1>
+        <h1>ANTI-CHEAT SYSTEM</h1>
+        <div class="error-desc">Обнаружен двойной вход в аккаунт.<br>Игра запущена на другом устройстве или в другой вкладке.</div>
+        <button class="mc-btn" onclick="location.reload()">Попробовать снова</button>
+    </div>
 
     <div id="screen-auth" class="menu-screen" style="display: flex;">
         <h1 id="auth-title">ВХОД</h1>
@@ -197,9 +210,10 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        // --- AUTH LOGIC ---
+        // --- AUTH & ANTI-CHEAT ---
         let isRegisterMode = false;
-        let currentUser = null; // Объект пользователя Firebase
+        let currentUser = null;
+        let statusRef = null;
 
         window.toggleAuthMode = () => {
             isRegisterMode = !isRegisterMode;
@@ -221,12 +235,7 @@
             if (isRegisterMode) {
                 if(!nick) { errBox.style.display='block'; errBox.innerText = "Нужен никнейм"; return; }
                 createUserWithEmailAndPassword(auth, email, pass)
-                    .then((userCredential) => {
-                        // Обновляем профиль (никнейм)
-                        updateProfile(userCredential.user, { displayName: nick }).then(() => {
-                            // Авто-вход произойдет через onAuthStateChanged
-                        });
-                    })
+                    .then((uc) => { updateProfile(uc.user, { displayName: nick }); })
                     .catch((error) => { errBox.style.display='block'; errBox.innerText = error.message; });
             } else {
                 signInWithEmailAndPassword(auth, email, pass)
@@ -235,23 +244,56 @@
         };
 
         window.logout = () => {
-            signOut(auth);
+            // Перед выходом ставим статус offline
+            if (statusRef) set(statusRef, { state: 'offline' }).then(() => signOut(auth));
+            else signOut(auth);
+            
             showScreen('screen-auth');
         };
 
-        // Слушатель состояния входа
+        // --- AUTH STATE & PRESENCE SYSTEM ---
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                currentUser = user;
-                document.getElementById('user-display-name').innerText = user.displayName || "Игрок";
-                showScreen('screen-main');
+                // ПРОВЕРКА ДВОЙНОГО ВХОДА
+                const userStatusRef = ref(db, `status/${user.uid}`);
+                
+                get(userStatusRef).then((snapshot) => {
+                    const status = snapshot.val();
+                    
+                    // Если в базе написано, что мы УЖЕ онлайн
+                    if (status && status.state === 'online') {
+                        // Показываем экран блокировки
+                        showScreen('screen-blocked');
+                        // И сразу разлогиниваем
+                        signOut(auth);
+                    } else {
+                        // Все ок, заходим
+                        currentUser = user;
+                        statusRef = userStatusRef;
+                        
+                        // 1. Ставим статус Online
+                        set(statusRef, { state: 'online', last_login: Date.now() });
+                        
+                        // 2. Ставим мину (если интернет пропадет - станет offline)
+                        onDisconnect(statusRef).set({ state: 'offline', last_seen: Date.now() });
+
+                        document.getElementById('user-display-name').innerText = user.displayName || "Игрок";
+                        showScreen('screen-main');
+                    }
+                });
+
             } else {
                 currentUser = null;
                 showScreen('screen-auth');
             }
         });
 
-        // --- GLOBAL GAME VARS ---
+        // Если закрываем вкладку - тоже пытаемся поставить offline (для надежности)
+        window.addEventListener("beforeunload", function() {
+            if (statusRef) set(statusRef, { state: 'offline' });
+        });
+
+        // --- GLOBAL VARS ---
         let camera, scene, renderer, controls;
         const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
         let isMultiplayer = false, isHost = false, currentLobbyId = null, currentWorldName = null;
@@ -262,21 +304,19 @@
         let prevTime = performance.now(), lastUploadTime = 0;
         let settings = { sensitivity: 0.5, renderDist: 60 };
         let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
-        
         const WALK_SPEED=30.0, SPRINT_SPEED=50.0, CROUCH_SPEED=10.0, JUMP_FORCE=9, GRAVITY=24.0;
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
         const textureUrls = ['./textures/grass.png', './textures/dirt.png', './textures/bricks.png', './textures/obsidian.png', './textures/iron.png'];
 
-        // --- MENU SYSTEM ---
+        // --- MENUS ---
         window.showScreen = (screenId) => {
             document.querySelectorAll('.menu-screen').forEach(el => el.style.display = 'none');
             document.getElementById(screenId).style.display = 'flex';
             if (screenId === 'screen-worlds') renderWorldList();
-            if (screenId === 'screen-multi') fetchMyServers(); // Грузим с Firebase
+            if (screenId === 'screen-multi') fetchMyServers();
         };
 
-        // --- SETTINGS ---
         const sS = document.getElementById('sens-slider'), dS = document.getElementById('dist-slider');
         sS.oninput=()=>document.getElementById('sens-val').innerText=sS.value; dS.oninput=()=>document.getElementById('dist-val').innerText=dS.value;
         window.saveSettings = () => {
@@ -300,19 +340,14 @@
         window.deleteWorld=(n)=>{if(confirm("Удалить?")){const w=getLocalWorlds();delete w[n];saveLocalWorlds(w);renderWorldList();}};
         function loadLocalWorld(n){ currentWorldName=n; isMultiplayer=false; isHost=false; startEngine(); const w=getLocalWorlds()[n].blocks; if(Object.keys(w).length>0) for(let k in w){const[x,y,z]=k.split(',').map(Number);createBlock(x,y,z,materials[w[k]],false);} else generateBasicTerrain(); }
 
-        // --- CLOUD SERVERS (FIREBASE) ---
-        // Загрузка серверов, где ownerId == currentUser.uid
+        // --- CLOUD SERVERS ---
         window.fetchMyServers = () => {
             if (!currentUser) return;
             const l = document.getElementById('server-list'); l.innerHTML = 'Загрузка...';
-            
-            // Запрос: найти лобби, где ownerId == UID
             const myLobbiesQuery = query(ref(db, 'lobbies'), orderByChild('ownerId'), equalTo(currentUser.uid));
-            
             onValue(myLobbiesQuery, (snapshot) => {
                 l.innerHTML = '';
                 if (!snapshot.exists()) { l.innerHTML = '<div style="padding:10px; color:#aaa;">Нет активных серверов</div>'; return; }
-                
                 snapshot.forEach((childSnap) => {
                     const code = childSnap.key;
                     const d = document.createElement('div'); d.className = 'list-item';
@@ -320,121 +355,61 @@
                     d.onclick = (e) => { if(!e.target.classList.contains('del-btn')) { document.getElementById('lobby-code-input').value = code; } };
                     l.appendChild(d);
                 });
-            }, { onlyOnce: false }); // Слушаем изменения в реальном времени
+            }, { onlyOnce: false });
         };
 
         window.createLobby = () => {
             const code = Math.floor(1000 + Math.random() * 9000).toString();
             isHost = true;
-            // Создаем запись сервера с привязкой к владельцу
-            set(ref(db, `lobbies/${code}`), {
-                ownerId: currentUser.uid,
-                created: Date.now(),
-                world: {}, // Пустой мир
-                players: {}
-            }).then(() => {
-                startMultiplayer(code);
-            });
+            set(ref(db, `lobbies/${code}`), { ownerId: currentUser.uid, created: Date.now(), world: {}, players: {} }).then(() => { startMultiplayer(code); });
         };
-
-        window.killServer = (code) => {
-            if(!confirm("Удалить сервер " + code + "? Все игроки будут отключены.")) return;
-            remove(ref(db, `lobbies/${code}`)); // Просто удаляем узел, список обновится сам через onValue
-        };
-
+        window.killServer = (code) => { if(!confirm("Удалить сервер?")) return; remove(ref(db, `lobbies/${code}`)); };
         window.joinLobby = () => {
-            const code = document.getElementById('lobby-code-input').value;
-            if(!code) return alert("Введите код");
-            
+            const code = document.getElementById('lobby-code-input').value; if(!code) return alert("Введите код");
             get(ref(db, `lobbies/${code}`)).then(snapshot => {
-                if (snapshot.exists()) {
-                    // Проверяем, являемся ли мы владельцем (если зашли по коду)
-                    const data = snapshot.val();
-                    isHost = (data.ownerId === currentUser.uid);
-                    startMultiplayer(code);
-                } else {
-                    alert("Сервер не найден!");
-                }
+                if (snapshot.exists()) { isHost = (snapshot.val().ownerId === currentUser.uid); startMultiplayer(code); } else alert("Сервер не найден!");
             });
         };
 
         function startMultiplayer(code) {
-            isMultiplayer = true;
-            currentLobbyId = code;
-            currentWorldName = null;
-            startEngine();
-            
-            const info = document.getElementById('lobby-info');
-            info.style.display = 'block';
-            info.innerText = isHost ? `Сервер: ${code} (ВЫ ХОСТ)` : `Сервер: ${code}`;
-
-            // СЛУШАЕМ СМЕРТЬ СЕРВЕРА
-            lobbyRefCheck = onValue(ref(db, `lobbies/${currentLobbyId}`), (snap) => {
-                if (!snap.exists()) quitToTitle(true, "СЕРВЕР БЫЛ ВЫКЛЮЧЕН ВЛАДЕЛЬЦЕМ");
-            });
-
-            // Входим как игрок (с нашим UID и НИКОМ)
+            isMultiplayer = true; currentLobbyId = code; currentWorldName = null; startEngine();
+            document.getElementById('lobby-info').style.display = 'block'; document.getElementById('lobby-info').innerText = isHost ? `Сервер: ${code} (HOST)` : `Сервер: ${code}`;
+            lobbyRefCheck = onValue(ref(db, `lobbies/${currentLobbyId}`), (snap) => { if (!snap.exists()) quitToTitle(true, "СЕРВЕР БЫЛ ВЫКЛЮЧЕН ВЛАДЕЛЬЦЕМ"); });
             playerRef = ref(db, `lobbies/${currentLobbyId}/players/${currentUser.uid}`);
-            onDisconnect(playerRef).remove(); // Если вылетел - игрок удаляется, но сервер живет
-
-            // Записываем имя для отображения
-            set(playerRef, {
-                x: 0, y: 20, z: 0, rotation: 0,
-                nick: currentUser.displayName
-            });
-
-            // Игроки
+            onDisconnect(playerRef).remove();
+            set(playerRef, { x: 0, y: 20, z: 0, rotation: 0, nick: currentUser.displayName });
+            
             const pRef = ref(db, `lobbies/${currentLobbyId}/players`);
             onChildAdded(pRef, (s) => { if(s.key !== currentUser.uid) createOtherPlayer(s.key, s.val()); });
             onChildChanged(pRef, (s) => { if(s.key !== currentUser.uid && otherPlayers[s.key]) updateOtherPlayer(s.key, s.val()); });
             onChildRemoved(pRef, (s) => { if(otherPlayers[s.key]) { scene.remove(otherPlayers[s.key].mesh); delete otherPlayers[s.key]; } });
-
-            // Мир
+            
             worldRef = ref(db, `lobbies/${currentLobbyId}/world`);
-            onChildAdded(worldRef, (s) => {
-                const [x,y,z] = s.key.split('_').map(Number);
-                if (!hasBlock(x,y,z)) createBlock(x,y,z,materials[s.val()], true);
-            });
-            onChildRemoved(worldRef, (s) => {
-                const [x,y,z] = s.key.split('_').map(Number);
-                const mesh = objectsMap[`${x},${y},${z}`];
-                if(mesh) removeBlockLocal(mesh);
-            });
-
+            onChildAdded(worldRef, (s) => { const [x,y,z] = s.key.split('_').map(Number); if (!hasBlock(x,y,z)) createBlock(x,y,z,materials[s.val()], true); });
+            onChildRemoved(worldRef, (s) => { const [x,y,z] = s.key.split('_').map(Number); const mesh = objectsMap[`${x},${y},${z}`]; if(mesh) removeBlockLocal(mesh); });
             setTimeout(() => { if (Object.keys(worldData).length === 0) generateBasicTerrain(); }, 1000);
         }
 
         // --- ENGINE ---
         function startEngine() {
-            document.querySelectorAll('.menu-screen').forEach(el => el.style.display = 'none');
-            document.getElementById('game-ui').style.display = 'block';
-            init();
-            controls.pointerSpeed = settings.sensitivity; scene.fog.far = settings.renderDist; camera.far = settings.renderDist*2;
-            isGameRunning = true; isPaused = false; animate();
-            setTimeout(() => { alert("Готово! Кликни для старта."); }, 100);
+            document.querySelectorAll('.menu-screen').forEach(el => el.style.display = 'none'); document.getElementById('game-ui').style.display = 'block';
+            init(); controls.pointerSpeed = settings.sensitivity; scene.fog.far = settings.renderDist; camera.far = settings.renderDist*2;
+            isGameRunning = true; isPaused = false; animate(); setTimeout(() => { alert("Готово! Кликни для старта."); }, 100);
         }
-
         window.resumeGame = () => { document.getElementById('pause-menu').style.display='none'; controls.lock(); };
         window.quitToTitle = (forced=false, msg="") => {
-            // Отключаем слушателя смерти лобби, чтобы не сработало дважды
             if (lobbyRefCheck) lobbyRefCheck();
-            
-            // Если выходим сами из МП, удаляем своего игрока
             if (isMultiplayer && !forced) remove(playerRef);
-
-            // Сохраняем локальный мир
             if (!isMultiplayer && currentWorldName && !forced) {
                 const w = getLocalWorlds(); const b = {};
                 for(let k in worldData) { if(objectsMap[k]) b[k] = materials.indexOf(objectsMap[k].material); }
                 w[currentWorldName].blocks = b; saveLocalWorlds(w);
             }
-            if(forced) alert(msg);
-            location.reload();
+            if(forced) alert(msg); location.reload();
         };
 
         function generateBasicTerrain() {
-            const R=12;
-            for(let y=-5; y<0; y++) for(let x=-R; x<R; x++) for(let z=-R; z<R; z++) createBlock(x,y,z,materials[1]);
+            const R=12; for(let y=-5; y<0; y++) for(let x=-R; x<R; x++) for(let z=-R; z<R; z++) createBlock(x,y,z,materials[1]);
             for(let x=-R; x<R; x++) for(let z=-R; z<R; z++) createBlock(x,0,z,materials[0]);
         }
 
@@ -453,7 +428,6 @@
             renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(window.innerWidth, window.innerHeight); document.body.appendChild(renderer.domElement); window.addEventListener('resize', onRez);
         }
 
-        // --- GAMEPLAY HELPERS ---
         function onKeyDown(e) {
             if(!isGameRunning)return;
             if(e.code==='KeyE'){ if(isPaused)return; if(isInventoryOpen){isInventoryOpen=false;document.getElementById('inventory-screen').style.display='none';controls.lock();}else{isInventoryOpen=true;document.getElementById('inventory-screen').style.display='flex';controls.unlock();} return; }
@@ -481,30 +455,24 @@
                 if(Math.abs(camera.position.x-p.x)<0.7 && Math.abs(camera.position.z-p.z)<0.7 && camera.position.y-1.6<p.y+0.3) return; createBlock(p.x,p.y,p.z,materials[m]); }
             }
         }
-        function checkCol(nx,nz){const r=0.3,yf=Math.floor(camera.position.y-1.1),yh=Math.floor(camera.position.y-0.1); const k=[`${Math.round(nx+r)},${yf},${Math.round(nz+r)}`,`${Math.round(nx-r)},${yf},${Math.round(nz-r)}`]; return k.some(key=>worldData[key]);} // Simplified for brevity
-        function checkG(x,y,z){const by=Math.round(y-0.5); return worldData[`${Math.round(x)},${by},${Math.round(z)}`];} // Simplified
+        function checkCol(nx,nz){const r=0.3,yf=Math.floor(camera.position.y-1.1),yh=Math.floor(camera.position.y-0.1); const k=[`${Math.round(nx+r)},${yf},${Math.round(nz+r)}`,`${Math.round(nx-r)},${yf},${Math.round(nz-r)}`]; return k.some(key=>worldData[key]);} 
+        function checkG(x,y,z){const by=Math.round(y-0.5); return worldData[`${Math.round(x)},${by},${Math.round(z)}`];} 
 
-        // --- PLAYER ENTITIES ---
         function createOtherPlayer(id, data) {
             const g=new THREE.BoxGeometry(0.6,1.8,0.6); const m=new THREE.MeshLambertMaterial({color:0xff0000}); const mesh=new THREE.Mesh(g,m);
             const hg=new THREE.BoxGeometry(0.4,0.4,0.4); const hm=new THREE.MeshLambertMaterial({color:0xffccaa}); const head=new THREE.Mesh(hg,hm); head.position.y=0.9; mesh.add(head);
-            // Nickname sprite
             if (data.nick) {
-                const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); canvas.width=256; canvas.height=64;
-                ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0,0,256,64);
-                ctx.fillStyle = "white"; ctx.font = "30px Arial"; ctx.textAlign = "center"; ctx.fillText(data.nick, 128, 42);
-                const tex = new THREE.CanvasTexture(canvas); const spriteMat = new THREE.SpriteMaterial({ map: tex });
-                const sprite = new THREE.Sprite(spriteMat); sprite.position.y = 1.6; sprite.scale.set(2, 0.5, 1); mesh.add(sprite);
+                const c=document.createElement('canvas'); const ctx=c.getContext('2d'); c.width=256; c.height=64;
+                ctx.fillStyle="rgba(0,0,0,0.5)"; ctx.fillRect(0,0,256,64); ctx.fillStyle="white"; ctx.font="30px Arial"; ctx.textAlign="center"; ctx.fillText(data.nick,128,42);
+                const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)})); s.position.y=1.6; s.scale.set(2,0.5,1); mesh.add(s);
             }
             mesh.position.set(data.x,data.y-0.9,data.z); scene.add(mesh); otherPlayers[id]={mesh};
         }
         function updateOtherPlayer(id,data){const p=otherPlayers[id]; p.mesh.position.set(data.x,data.y-0.9,data.z); p.mesh.rotation.y=data.rotation;}
         
-        // --- LOOP ---
         function animate() {
             requestAnimationFrame(animate); if(!isGameRunning)return;
             const t=performance.now(), d=Math.min((t-prevTime)/1000,0.05);
-            
             let sim=false; if(isMultiplayer)sim=true; else if(!isPaused&&!isInventoryOpen&&controls.isLocked)sim=true;
             if(sim) {
                 velocity.x-=velocity.x*10.0*d; velocity.z-=velocity.z*10.0*d; velocity.y-=GRAVITY*d;
@@ -513,14 +481,11 @@
                     let spd=isCrouching?CROUCH_SPEED:(isSprinting?SPRINT_SPEED:WALK_SPEED);
                     if(moveForward||moveBackward)velocity.z-=direction.z*spd*d; if(moveLeft||moveRight)velocity.x-=direction.x*spd*d;
                 }
-                controls.moveRight(-velocity.x*d); controls.moveForward(-velocity.z*d); // Basic movement, no sophisticated collision in Lite logic
+                controls.moveRight(-velocity.x*d); controls.moveForward(-velocity.z*d);
                 camera.position.y += velocity.y*d; 
                 if(camera.position.y < -30) { camera.position.set(0,20,0); velocity.y=0; }
-                // Simple Floor Collision
                 const feet = camera.position.y - 1.6;
-                if (checkG(camera.position.x, feet, camera.position.z) && velocity.y < 0) {
-                     camera.position.y = Math.round(feet-0.5)+0.5+1.6; velocity.y=0; canJump=true;
-                }
+                if (checkG(camera.position.x, feet, camera.position.z) && velocity.y < 0) { camera.position.y = Math.round(feet-0.5)+0.5+1.6; velocity.y=0; canJump=true; }
                 if(isMultiplayer && t-lastUploadTime>150) { if(playerRef)set(playerRef,{x:camera.position.x,y:camera.position.y,z:camera.position.z,rotation:camera.rotation.y, nick:currentUser.displayName}); lastUploadTime=t; }
             }
             prevTime=t; renderer.render(scene, camera);
