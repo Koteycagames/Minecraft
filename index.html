@@ -512,3 +512,22 @@
                     const groundLevel = blockY + 0.5;
                     // Если мы упали ниже уровня блока, или находимся внутри него, но летели вниз
                     if (feetY < groundLevel && velocity.y <= 0) {
+                        camera.position.y = groundLevel + playerHeight;
+                        velocity.y = 0;
+                        canJump = true;
+                    }
+                }
+                
+                if (camera.position.y < -30) {
+                    camera.position.set(0, 20, 0);
+                    velocity.y = 0;
+                }
+                prevTime = time;
+            } else {
+                prevTime = performance.now();
+            }
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
