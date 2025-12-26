@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft: Fixed Jump & Edges</title>
+    <title>Minecraft: Multiplayer V1</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
@@ -79,16 +79,27 @@
             background-size: cover; display: none;
             border: 2px solid yellow;
         }
+        
+        /* Никнейм над игроком */
+        .player-label {
+            position: absolute;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 12px;
+            pointer-events: none;
+            display: none; /* Пока скрываем, сложно позиционировать в 2D */
+        }
     </style>
 </head>
 <body>
     <div id="crosshair"></div>
     <div id="instructions">
-        <b>Управление:</b><br>
+        <b>Мультиплеер</b><br>
         E - Инвентарь<br>
-        WASD - Ходить | Shift/Ctrl<br>
-        1-5 - Выбор слота<br>
-        ПКМ - Строить
+        WASD - Ходить | Space - Прыжок<br>
+        ЛКМ/ПКМ - Блоки
     </div>
     <div id="hotbar">
         <div class="slot active" id="slot-0"></div>
@@ -113,7 +124,9 @@
         {
             "imports": {
                 "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "firebase-app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+                "firebase-database": "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"
             }
         }
     </script>
@@ -121,18 +134,44 @@
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        
+        // --- FIREBASE IMPORTS ---
+        import { initializeApp } from "firebase-app";
+        import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onDisconnect } from "firebase-database";
 
+        // --- FIREBASE CONFIG ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI",
+          authDomain: "minecraft-2ec53.firebaseapp.com",
+          projectId: "minecraft-2ec53",
+          storageBucket: "minecraft-2ec53.firebasestorage.app",
+          messagingSenderId: "1065608540888",
+          appId: "1:1065608540888:web:6d0a253399e3f6ff94ddad"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        
+        // Генерируем ID для текущего игрока
+        const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+        const playerRef = ref(db, 'players/' + playerId);
+        
+        // Удаляем игрока из базы при закрытии вкладки
+        onDisconnect(playerRef).remove();
+
+        // --- GAME VARIABLES ---
         let camera, scene, renderer, controls;
         const objects = []; 
         const worldData = {}; 
         let raycaster;
+        const otherPlayers = {}; // Хранилище для мешей других игроков
         
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         let canJump = false;
         let isSprinting = false;
         let isCrouching = false;
         
-        // Инвентарь
         let isInventoryOpen = false;
         let holdingBlockIndex = null; 
         let hotbarContent = [null, null, null, null, null]; 
@@ -141,13 +180,13 @@
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
+        let lastUploadTime = 0; // Для ограничения частоты отправки данных
 
-        // --- НАСТРОЙКИ ---
+        // --- PHYSICS SETTINGS ---
         const WALK_SPEED = 30.0;
         const SPRINT_SPEED = 50.0;
         const CROUCH_SPEED = 10.0;
-        // ИСПРАВЛЕНИЕ 1: Сила прыжка увеличена с 8 до 10 (позволяет запрыгивать на 1 блок)
-        const JUMP_FORCE = 9; 
+        const JUMP_FORCE = 9; // JUMP FORCE 9 (как ты просил)
         const STAND_HEIGHT = 1.6;
         const CROUCH_HEIGHT = 1.2;
         let playerHeight = STAND_HEIGHT;
@@ -183,6 +222,37 @@
 
             controls = new PointerLockControls(camera, document.body);
             
+            // --- СЛУШАТЕЛИ FIREBASE (МУЛЬТИПЛЕЕР) ---
+            const playersRef = ref(db, 'players');
+            
+            // Игрок зашел
+            onChildAdded(playersRef, (snapshot) => {
+                const id = snapshot.key;
+                const data = snapshot.val();
+                if (id !== playerId) {
+                    createOtherPlayer(id, data);
+                }
+            });
+
+            // Игрок сдвинулся
+            onChildChanged(playersRef, (snapshot) => {
+                const id = snapshot.key;
+                const data = snapshot.val();
+                if (id !== playerId && otherPlayers[id]) {
+                    updateOtherPlayer(id, data);
+                }
+            });
+
+            // Игрок вышел
+            onChildRemoved(playersRef, (snapshot) => {
+                const id = snapshot.key;
+                if (otherPlayers[id]) {
+                    scene.remove(otherPlayers[id].mesh);
+                    delete otherPlayers[id];
+                }
+            });
+
+            // UI
             const invScreen = document.getElementById('inventory-screen');
             const instructions = document.getElementById('instructions');
 
@@ -287,6 +357,7 @@
             raycaster.far = 5; 
             document.addEventListener('mousedown', onMouseClick);
 
+            // Генерация мира
             const floorRadius = 12;
             for (let y = -5; y < 0; y++) {
                 for (let x = -floorRadius; x < floorRadius; x++) {
@@ -307,7 +378,44 @@
             window.addEventListener('resize', onWindowResize);
         }
 
-        // --- ФУНКЦИИ ---
+        // --- МУЛЬТИПЛЕЕР ФУНКЦИИ ---
+        function createOtherPlayer(id, data) {
+            // Создаем "Стива" - простую коробку пока что
+            const geometry = new THREE.BoxGeometry(0.6, 1.8, 0.6);
+            const material = new THREE.MeshLambertMaterial({ color: 0xff0000 }); // Красный игрок
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            // Голова
+            const headGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+            const headMat = new THREE.MeshLambertMaterial({ color: 0xffccaa }); // Цвет кожи
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 0.9; // Сверху тела
+            mesh.add(head);
+
+            // Ставим позицию
+            mesh.position.set(data.x, data.y - 0.9, data.z); // -0.9 т.к. origin в центре box
+            
+            scene.add(mesh);
+            otherPlayers[id] = { mesh: mesh };
+        }
+
+        function updateOtherPlayer(id, data) {
+            const player = otherPlayers[id];
+            // Плавно обновляем позицию (можно добавить интерполяцию потом)
+            player.mesh.position.set(data.x, data.y - 0.9, data.z);
+            player.mesh.rotation.y = data.rotation;
+        }
+
+        function uploadMyPosition() {
+            set(playerRef, {
+                x: camera.position.x,
+                y: camera.position.y,
+                z: camera.position.z,
+                rotation: camera.rotation.y
+            });
+        }
+
+        // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
         function initInventoryUI() {
             const grid = document.getElementById('creative-grid');
             textureUrls.forEach((url, index) => {
@@ -382,6 +490,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        // --- ЛОГИКА СТРОЙКИ ---
         function onMouseClick(event) {
             if (isInventoryOpen) return;
             if (!controls.isLocked) return;
@@ -418,6 +527,7 @@
             }
         }
 
+        // --- ЛОГИКА СТЕН ---
         function checkCollisionPlayer(newX, newZ) {
             const r = PLAYER_RADIUS;
             const yFeet = Math.floor(camera.position.y - playerHeight + 0.5); 
@@ -432,26 +542,23 @@
             return false;
         }
 
-        // ИСПРАВЛЕНИЕ 2: Проверка наличия пола под ЛЮБОЙ частью игрока, а не только под центром
         function checkGround(x, y, z) {
             const r = PLAYER_RADIUS;
-            const blockY = Math.round(y - 0.5); // Уровень блока под ногами
-
-            // Проверяем центр и 4 угла "ног"
+            const blockY = Math.round(y - 0.5); 
             if (hasBlock(Math.round(x), blockY, Math.round(z))) return true;
             if (hasBlock(Math.round(x + r), blockY, Math.round(z + r))) return true;
             if (hasBlock(Math.round(x - r), blockY, Math.round(z + r))) return true;
             if (hasBlock(Math.round(x + r), blockY, Math.round(z - r))) return true;
             if (hasBlock(Math.round(x - r), blockY, Math.round(z - r))) return true;
-            
             return false;
         }
 
         function animate() {
             requestAnimationFrame(animate);
             
+            const time = performance.now();
+
             if (controls.isLocked && !isInventoryOpen) {
-                const time = performance.now();
                 const delta = Math.min((time - prevTime) / 1000, 0.05); 
                 
                 velocity.x -= velocity.x * 10.0 * delta;
@@ -493,12 +600,9 @@
                     const feetY = camera.position.y - playerHeight;
                     const blockY = Math.round(feetY - 0.5);
 
-                    // Если падаем вниз
                     if (step < 0) {
-                        // Используем новую функцию checkGround вместо hasBlock
                         if (checkGround(camera.position.x, feetY, camera.position.z)) {
                             const groundLevel = blockY + 0.5;
-                            // Если ноги коснулись пола
                             if (feetY < groundLevel + 0.1) { 
                                 camera.position.y = groundLevel + playerHeight;
                                 velocity.y = 0;
@@ -526,6 +630,14 @@
                     camera.position.set(0, 20, 0);
                     velocity.y = 0;
                 }
+
+                // --- FIREBASE UPLOAD (Throttled) ---
+                // Отправляем данные каждые 40мс (примерно 25 раз в секунду)
+                if (time - lastUploadTime > 40) {
+                    uploadMyPosition();
+                    lastUploadTime = time;
+                }
+
                 prevTime = time;
             } else {
                 prevTime = performance.now();
@@ -535,4 +647,3 @@
     </script>
 </body>
 </html>
-
