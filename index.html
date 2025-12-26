@@ -2,10 +2,13 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft: Multiplayer V1</title>
+    <title>Minecraft: Menu & Lobbies</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
+        /* --- ИГРОВОЙ ИНТЕРФЕЙС (Скрыт в меню) --- */
+        #game-ui { display: none; }
+
         #crosshair {
             position: absolute; top: 50%; left: 50%;
             width: 20px; height: 20px;
@@ -19,6 +22,13 @@
             color: white; 
             background: rgba(0,0,0,0.6); padding: 15px; border-radius: 5px;
             pointer-events: none;
+        }
+
+        #lobby-info {
+            position: absolute; top: 10px; right: 10px;
+            color: yellow; font-weight: bold;
+            background: rgba(0,0,0,0.6); padding: 10px; border-radius: 5px;
+            pointer-events: none; display: none;
         }
 
         #hotbar {
@@ -41,12 +51,7 @@
             pointer-events: auto; 
             cursor: pointer;
         }
-
-        .slot.active {
-            border-color: white; 
-            transform: scale(1.1);
-            background-color: rgba(255, 255, 255, 0.1);
-        }
+        .slot.active { border-color: white; transform: scale(1.1); background-color: rgba(255, 255, 255, 0.1); }
 
         #inventory-screen {
             display: none; 
@@ -72,53 +77,96 @@
             cursor: pointer; background-size: cover;
         }
         .inv-slot:hover { border-color: white; background-color: #999; }
-
         #cursor-item {
             position: absolute; width: 40px; height: 40px;
             pointer-events: none; z-index: 200; 
             background-size: cover; display: none;
             border: 2px solid yellow;
         }
-        
-        /* Никнейм над игроком */
-        .player-label {
-            position: absolute;
-            background: rgba(0,0,0,0.5);
-            color: white;
-            padding: 2px 5px;
-            border-radius: 3px;
-            font-size: 12px;
-            pointer-events: none;
-            display: none; /* Пока скрываем, сложно позиционировать в 2D */
+
+        /* --- ГЛАВНОЕ МЕНЮ --- */
+        #main-menu {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: url('./textures/dirt.png'); /* Фон меню */
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 999;
         }
+        
+        /* Затемнение фона меню */
+        #main-menu::before {
+            content: ""; position: absolute; top:0; left:0; width:100%; height:100%;
+            background: rgba(0,0,0,0.7); z-index: -1;
+        }
+
+        h1 { color: white; font-size: 60px; text-shadow: 4px 4px 0 #000; margin-bottom: 40px; }
+
+        .menu-btn {
+            width: 300px; padding: 15px; margin: 10px;
+            font-family: 'Courier New', Courier, monospace; font-size: 24px; font-weight: bold;
+            color: white; background: #777; border: 4px solid #333;
+            cursor: pointer; text-shadow: 2px 2px 0 #000;
+        }
+        .menu-btn:hover { background: #888; border-color: #aaa; color: #ffffaa; }
+
+        #multiplayer-panel { display: none; flex-direction: column; align-items: center; }
+        
+        input {
+            width: 280px; padding: 10px; margin: 10px;
+            font-family: 'Courier New', Courier, monospace; font-size: 20px;
+            background: black; color: white; border: 2px solid #555;
+        }
+
     </style>
 </head>
 <body>
-    <div id="crosshair"></div>
-    <div id="instructions">
-        <b>Мультиплеер</b><br>
-        E - Инвентарь<br>
-        WASD - Ходить | Space - Прыжок<br>
-        ЛКМ/ПКМ - Блоки
-    </div>
-    <div id="hotbar">
-        <div class="slot active" id="slot-0"></div>
-        <div class="slot" id="slot-1"></div>
-        <div class="slot" id="slot-2"></div>
-        <div class="slot" id="slot-3"></div>
-        <div class="slot" id="slot-4"></div>
-    </div>
-    <div id="inventory-screen">
-        <div id="inventory-container">
-            <div style="font-weight:bold; margin-bottom:5px;">Блоки:</div>
-            <div class="inv-grid" id="creative-grid"></div>
-            <div style="text-align: center; color: #333; margin-top: 10px; font-size: 14px;">
-                Кликни на блок -> Кликни на слот.<br>
-                Нажми <b>E</b>, чтобы играть.
-            </div>
+
+    <div id="main-menu">
+        <h1>MINECRAFT JS</h1>
+        
+        <div id="main-buttons">
+            <button class="menu-btn" id="btn-single">Одиночная игра</button>
+            <button class="menu-btn" id="btn-multi">Сетевая игра</button>
+        </div>
+
+        <div id="multiplayer-panel">
+            <button class="menu-btn" id="btn-create">Создать лобби</button>
+            <div style="color:white; margin: 10px;">--- ИЛИ ---</div>
+            <input type="text" id="lobby-code-input" placeholder="Введите код лобби" maxlength="10">
+            <button class="menu-btn" id="btn-join">Подключиться</button>
+            <button class="menu-btn" style="margin-top:20px; background:#533;" id="btn-back">Назад</button>
         </div>
     </div>
-    <div id="cursor-item"></div>
+
+    <div id="game-ui">
+        <div id="crosshair"></div>
+        <div id="instructions">
+            <b>Управление</b><br>
+            WASD - Ходить | Space - Прыжок<br>
+            E - Инвентарь | ЛКМ/ПКМ - Блоки
+        </div>
+        <div id="lobby-info"></div>
+        
+        <div id="hotbar">
+            <div class="slot active" id="slot-0"></div>
+            <div class="slot" id="slot-1"></div>
+            <div class="slot" id="slot-2"></div>
+            <div class="slot" id="slot-3"></div>
+            <div class="slot" id="slot-4"></div>
+        </div>
+        
+        <div id="inventory-screen">
+            <div id="inventory-container">
+                <div style="font-weight:bold; margin-bottom:5px;">Блоки:</div>
+                <div class="inv-grid" id="creative-grid"></div>
+                <div style="text-align: center; color: #333; margin-top: 10px; font-size: 14px;">
+                    Кликни на блок -> Кликни на слот.<br>
+                    Нажми <b>E</b>, чтобы играть.
+                </div>
+            </div>
+        </div>
+        <div id="cursor-item"></div>
+    </div>
 
     <script type="importmap">
         {
@@ -134,8 +182,6 @@
     <script type="module">
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-        
-        // --- FIREBASE IMPORTS ---
         import { initializeApp } from "firebase-app";
         import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onDisconnect } from "firebase-database";
 
@@ -149,23 +195,20 @@
           appId: "1:1065608540888:web:6d0a253399e3f6ff94ddad"
         };
 
-        // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         
-        // Генерируем ID для текущего игрока
-        const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
-        const playerRef = ref(db, 'players/' + playerId);
-        
-        // Удаляем игрока из базы при закрытии вкладки
-        onDisconnect(playerRef).remove();
+        // --- ПЕРЕМЕННЫЕ ИГРЫ ---
+        let isMultiplayer = false;
+        let currentLobbyId = null;
+        let playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+        let playerRef = null;
 
-        // --- GAME VARIABLES ---
         let camera, scene, renderer, controls;
         const objects = []; 
         const worldData = {}; 
         let raycaster;
-        const otherPlayers = {}; // Хранилище для мешей других игроков
+        const otherPlayers = {}; 
         
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         let canJump = false;
@@ -180,13 +223,12 @@
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
-        let lastUploadTime = 0; // Для ограничения частоты отправки данных
+        let lastUploadTime = 0; 
 
-        // --- PHYSICS SETTINGS ---
         const WALK_SPEED = 30.0;
         const SPRINT_SPEED = 50.0;
         const CROUCH_SPEED = 10.0;
-        const JUMP_FORCE = 9; // JUMP FORCE 9 (как ты просил)
+        const JUMP_FORCE = 9; // ВАШ ИДЕАЛЬНЫЙ ПРЫЖОК
         const STAND_HEIGHT = 1.6;
         const CROUCH_HEIGHT = 1.2;
         let playerHeight = STAND_HEIGHT;
@@ -200,12 +242,98 @@
             './textures/obsidian.png',
             './textures/iron.png'
         ];
-
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
 
-        init();
-        animate();
+        // --- ЛОГИКА МЕНЮ ---
+        const mainMenu = document.getElementById('main-menu');
+        const mainButtons = document.getElementById('main-buttons');
+        const multiPanel = document.getElementById('multiplayer-panel');
+        const gameUI = document.getElementById('game-ui');
+        const lobbyInfo = document.getElementById('lobby-info');
 
+        // Кнопки
+        document.getElementById('btn-single').onclick = () => {
+            isMultiplayer = false;
+            startGame();
+        };
+
+        document.getElementById('btn-multi').onclick = () => {
+            mainButtons.style.display = 'none';
+            multiPanel.style.display = 'flex';
+        };
+
+        document.getElementById('btn-back').onclick = () => {
+            multiPanel.style.display = 'none';
+            mainButtons.style.display = 'flex';
+        };
+
+        document.getElementById('btn-create').onclick = () => {
+            // Генерируем код лобби (например, 5521)
+            const code = Math.floor(1000 + Math.random() * 9000).toString();
+            startMultiplayer(code);
+        };
+
+        document.getElementById('btn-join').onclick = () => {
+            const code = document.getElementById('lobby-code-input').value;
+            if (code.length > 0) {
+                startMultiplayer(code);
+            } else {
+                alert("Введите код!");
+            }
+        };
+
+        function startMultiplayer(lobbyCode) {
+            isMultiplayer = true;
+            currentLobbyId = lobbyCode;
+            
+            lobbyInfo.style.display = 'block';
+            lobbyInfo.innerText = "Лобби: " + lobbyCode;
+            
+            // Настраиваем Firebase на конкретное лобби
+            playerRef = ref(db, `lobbies/${currentLobbyId}/players/${playerId}`);
+            onDisconnect(playerRef).remove();
+            
+            const playersRef = ref(db, `lobbies/${currentLobbyId}/players`);
+
+            // Слушаем других
+            onChildAdded(playersRef, (snapshot) => {
+                const id = snapshot.key;
+                const data = snapshot.val();
+                if (id !== playerId) createOtherPlayer(id, data);
+            });
+
+            onChildChanged(playersRef, (snapshot) => {
+                const id = snapshot.key;
+                const data = snapshot.val();
+                if (id !== playerId && otherPlayers[id]) updateOtherPlayer(id, data);
+            });
+
+            onChildRemoved(playersRef, (snapshot) => {
+                const id = snapshot.key;
+                if (otherPlayers[id]) {
+                    scene.remove(otherPlayers[id].mesh);
+                    delete otherPlayers[id];
+                }
+            });
+
+            startGame();
+        }
+
+        function startGame() {
+            mainMenu.style.display = 'none';
+            gameUI.style.display = 'block';
+            
+            init();
+            animate();
+            
+            // Сразу просим кликнуть для захвата
+            setTimeout(() => {
+                // Браузеры запрещают лок без клика, но мы попробуем или подождем клика игрока
+                alert("Кликни по экрану, чтобы начать!");
+            }, 100);
+        }
+
+        // --- ИНИЦИАЛИЗАЦИЯ ИГРЫ ---
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB);
@@ -222,41 +350,14 @@
 
             controls = new PointerLockControls(camera, document.body);
             
-            // --- СЛУШАТЕЛИ FIREBASE (МУЛЬТИПЛЕЕР) ---
-            const playersRef = ref(db, 'players');
-            
-            // Игрок зашел
-            onChildAdded(playersRef, (snapshot) => {
-                const id = snapshot.key;
-                const data = snapshot.val();
-                if (id !== playerId) {
-                    createOtherPlayer(id, data);
-                }
-            });
-
-            // Игрок сдвинулся
-            onChildChanged(playersRef, (snapshot) => {
-                const id = snapshot.key;
-                const data = snapshot.val();
-                if (id !== playerId && otherPlayers[id]) {
-                    updateOtherPlayer(id, data);
-                }
-            });
-
-            // Игрок вышел
-            onChildRemoved(playersRef, (snapshot) => {
-                const id = snapshot.key;
-                if (otherPlayers[id]) {
-                    scene.remove(otherPlayers[id].mesh);
-                    delete otherPlayers[id];
-                }
-            });
-
-            // UI
+            // Обработчики клика (UI)
             const invScreen = document.getElementById('inventory-screen');
             const instructions = document.getElementById('instructions');
 
             document.body.addEventListener('click', (e) => {
+                // Если мы еще в меню, ничего не делаем
+                if (mainMenu.style.display !== 'none') return;
+                
                 if (isInventoryOpen) return;
                 if (e.target.closest('#hotbar') || e.target.closest('#inventory-screen')) return;
                 if (!controls.isLocked) controls.lock();
@@ -274,6 +375,7 @@
                 if (!isInventoryOpen) instructions.style.display = 'block';
             });
             
+            // Текстуры
             const loader = new THREE.TextureLoader();
             const fallbackMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
 
@@ -290,6 +392,7 @@
                 materials = [fallbackMat];
             }
 
+            // Клавиши
             const onKeyDown = (e) => {
                 switch (e.code) {
                     case 'KeyE':
@@ -331,7 +434,7 @@
             };
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
-
+            
             document.addEventListener('wheel', (event) => {
                 if (isInventoryOpen) return;
                 if (event.deltaY > 0) {
@@ -357,7 +460,7 @@
             raycaster.far = 5; 
             document.addEventListener('mousedown', onMouseClick);
 
-            // Генерация мира
+            // Генерация
             const floorRadius = 12;
             for (let y = -5; y < 0; y++) {
                 for (let x = -floorRadius; x < floorRadius; x++) {
@@ -378,35 +481,29 @@
             window.addEventListener('resize', onWindowResize);
         }
 
-        // --- МУЛЬТИПЛЕЕР ФУНКЦИИ ---
+        // --- ФУНКЦИИ СЕТИ ---
         function createOtherPlayer(id, data) {
-            // Создаем "Стива" - простую коробку пока что
             const geometry = new THREE.BoxGeometry(0.6, 1.8, 0.6);
-            const material = new THREE.MeshLambertMaterial({ color: 0xff0000 }); // Красный игрок
+            const material = new THREE.MeshLambertMaterial({ color: 0xff0000 });
             const mesh = new THREE.Mesh(geometry, material);
-            
-            // Голова
             const headGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
-            const headMat = new THREE.MeshLambertMaterial({ color: 0xffccaa }); // Цвет кожи
+            const headMat = new THREE.MeshLambertMaterial({ color: 0xffccaa });
             const head = new THREE.Mesh(headGeo, headMat);
-            head.position.y = 0.9; // Сверху тела
+            head.position.y = 0.9; 
             mesh.add(head);
-
-            // Ставим позицию
-            mesh.position.set(data.x, data.y - 0.9, data.z); // -0.9 т.к. origin в центре box
-            
+            mesh.position.set(data.x, data.y - 0.9, data.z);
             scene.add(mesh);
             otherPlayers[id] = { mesh: mesh };
         }
 
         function updateOtherPlayer(id, data) {
             const player = otherPlayers[id];
-            // Плавно обновляем позицию (можно добавить интерполяцию потом)
             player.mesh.position.set(data.x, data.y - 0.9, data.z);
             player.mesh.rotation.y = data.rotation;
         }
 
         function uploadMyPosition() {
+            if (!isMultiplayer || !playerRef) return;
             set(playerRef, {
                 x: camera.position.x,
                 y: camera.position.y,
@@ -415,7 +512,7 @@
             });
         }
 
-        // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+        // --- ФУНКЦИИ ИНВЕНТАРЯ И МИРА ---
         function initInventoryUI() {
             const grid = document.getElementById('creative-grid');
             textureUrls.forEach((url, index) => {
@@ -527,7 +624,7 @@
             }
         }
 
-        // --- ЛОГИКА СТЕН ---
+        // --- ФИЗИКА И АНИМАЦИЯ ---
         function checkCollisionPlayer(newX, newZ) {
             const r = PLAYER_RADIUS;
             const yFeet = Math.floor(camera.position.y - playerHeight + 0.5); 
@@ -555,10 +652,9 @@
 
         function animate() {
             requestAnimationFrame(animate);
-            
             const time = performance.now();
 
-            if (controls.isLocked && !isInventoryOpen) {
+            if (controls && controls.isLocked && !isInventoryOpen) {
                 const delta = Math.min((time - prevTime) / 1000, 0.05); 
                 
                 velocity.x -= velocity.x * 10.0 * delta;
@@ -612,11 +708,7 @@
                             }
                         }
                     }
-                    
-                    const blockX = Math.round(camera.position.x);
-                    const blockZ = Math.round(camera.position.z);
                     const headY = Math.floor(camera.position.y + 0.2); 
-                    
                     if (step > 0 && hasBlock(blockX, headY, blockZ)) {
                          velocity.y = 0;
                          remainingY = 0;
@@ -631,9 +723,8 @@
                     velocity.y = 0;
                 }
 
-                // --- FIREBASE UPLOAD (Throttled) ---
-                // Отправляем данные каждые 40мс (примерно 25 раз в секунду)
-                if (time - lastUploadTime > 40) {
+                // Отправка данных (только если мультиплеер)
+                if (isMultiplayer && (time - lastUploadTime > 40)) {
                     uploadMyPosition();
                     lastUploadTime = time;
                 }
@@ -642,7 +733,7 @@
             } else {
                 prevTime = performance.now();
             }
-            renderer.render(scene, camera);
+            if (renderer) renderer.render(scene, camera);
         }
     </script>
 </body>
