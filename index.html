@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>My Minecraft on GitHub</title>
+    <title>Minecraft: 5 Textures</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
         
@@ -33,7 +33,8 @@
             width: 50px; height: 50px;
             border: 3px solid #555; background-color: rgba(0,0,0,0.3);
             display: flex; justify-content: center; align-items: center;
-            color: white; font-weight: bold; font-size: 24px;
+            color: white; font-weight: bold; font-size: 20px;
+            background-size: cover; /* Чтобы текстура заполняла слот */
         }
 
         .slot.active {
@@ -49,15 +50,12 @@
         <b>Управление:</b><br>
         WASD - Ходить<br>
         CTRL - Бег | SHIFT - Красться<br>
-        1-3 - Блоки<br>
+        1-5 - Выбор блока<br>
         ЛКМ - Ломать | ПКМ - Строить
     </div>
 
     <div id="hotbar">
-        <div class="slot active" id="slot-0">1</div>
-        <div class="slot" id="slot-1">2</div>
-        <div class="slot" id="slot-2">3</div>
-    </div>
+        <div class="slot active" id="slot-0">1</div> <div class="slot" id="slot-1">2</div> <div class="slot" id="slot-2">3</div> <div class="slot" id="slot-3">4</div> <div class="slot" id="slot-4">5</div> </div>
 
     <script type="importmap">
         {
@@ -86,7 +84,7 @@
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
 
-        // --- ВАШИ НАСТРОЙКИ (Сохранены) ---
+        // --- ВАШИ НАСТРОЙКИ ---
         const WALK_SPEED = 30.0;
         const SPRINT_SPEED = 50.0;
         const CROUCH_SPEED = 10.0;
@@ -95,7 +93,6 @@
         const STAND_HEIGHT = 1.6;
         const CROUCH_HEIGHT = 1.2;
         let playerHeight = STAND_HEIGHT;
-        const PLAYER_WIDTH = 0.3; 
 
         let materials = [];
         let selectedSlot = 0;
@@ -121,27 +118,43 @@
             controls = new PointerLockControls(camera, document.body);
             document.body.addEventListener('click', () => controls.lock());
             
-            // Загрузка текстур (Пути правильные для GitHub, если папка textures рядом)
+            // --- ЗАГРУЗКА 5 ТЕКСТУР ---
             const loader = new THREE.TextureLoader();
             const fallbackMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
 
             try {
+                // Загружаем картинки
                 const grassTex = loader.load('./textures/grass.png');
-                const stoneTex = loader.load('./textures/stone.png');
-                grassTex.magFilter = THREE.NearestFilter;
-                stoneTex.magFilter = THREE.NearestFilter;
+                const dirtTex = loader.load('./textures/dirt.png');
+                const brickTex = loader.load('./textures/bricks.png');
+                const obsidianTex = loader.load('./textures/obsidian.png');
+                const ironTex = loader.load('./textures/iron.png');
 
+                // Пикселизация (чтобы было четко)
+                const textures = [grassTex, dirtTex, brickTex, obsidianTex, ironTex];
+                textures.forEach(t => t.magFilter = THREE.NearestFilter);
+
+                // Создаем материалы
                 const grassMat = new THREE.MeshLambertMaterial({ map: grassTex });
-                const stoneMat = new THREE.MeshLambertMaterial({ map: stoneTex });
-                const brickMat = new THREE.MeshLambertMaterial({ map: stoneTex, color: 0xffaaaa });
+                const dirtMat = new THREE.MeshLambertMaterial({ map: dirtTex });
+                const brickMat = new THREE.MeshLambertMaterial({ map: brickTex });
+                const obsidianMat = new THREE.MeshLambertMaterial({ map: obsidianTex });
+                const ironMat = new THREE.MeshLambertMaterial({ map: ironTex });
 
-                materials = [grassMat, stoneMat, brickMat];
+                // Порядок материалов в массиве (0=Трава, 1=Грязь, 2=Кирпич, 3=Обсидиан, 4=Железо)
+                materials = [grassMat, dirtMat, brickMat, obsidianMat, ironMat];
                 
-                document.getElementById('slot-0').style.background = 'url(./textures/grass.png) center/cover';
-                document.getElementById('slot-1').style.background = 'url(./textures/stone.png) center/cover';
-                document.getElementById('slot-2').style.backgroundColor = '#cc5555';
+                // Ставим картинки в слоты инвентаря
+                document.getElementById('slot-0').style.backgroundImage = 'url(./textures/grass.png)';
+                document.getElementById('slot-1').style.backgroundImage = 'url(./textures/dirt.png)';
+                document.getElementById('slot-2').style.backgroundImage = 'url(./textures/bricks.png)';
+                document.getElementById('slot-3').style.backgroundImage = 'url(./textures/obsidian.png)';
+                document.getElementById('slot-4').style.backgroundImage = 'url(./textures/iron.png)';
+
             } catch (e) {
-                materials = [fallbackMat, fallbackMat, fallbackMat];
+                console.error("Ошибка загрузки текстур", e);
+                // Если ошибка, заполняем розовым
+                materials = [fallbackMat, fallbackMat, fallbackMat, fallbackMat, fallbackMat];
             }
 
             const onKeyDown = (e) => {
@@ -158,9 +171,13 @@
                         break;
                     case 'ControlLeft': isSprinting = true; break;
                     case 'ShiftLeft': isCrouching = true; break;
+                    
+                    // КНОПКИ ВЫБОРА БЛОКОВ (1-5)
                     case 'Digit1': selectSlot(0); break;
                     case 'Digit2': selectSlot(1); break;
                     case 'Digit3': selectSlot(2); break;
+                    case 'Digit4': selectSlot(3); break;
+                    case 'Digit5': selectSlot(4); break;
                 }
             };
             const onKeyUp = (e) => {
@@ -179,31 +196,34 @@
             document.addEventListener('wheel', (event) => {
                 if (event.deltaY > 0) {
                     let newSlot = selectedSlot + 1;
-                    if (newSlot > 2) newSlot = 0;
+                    if (newSlot > 4) newSlot = 0; // Теперь у нас 4 - последний индекс (всего 5)
                     selectSlot(newSlot);
                 } else {
                     let newSlot = selectedSlot - 1;
-                    if (newSlot < 0) newSlot = 2;
+                    if (newSlot < 0) newSlot = 4;
                     selectSlot(newSlot);
                 }
             });
 
             raycaster = new THREE.Raycaster();
-            raycaster.far = 5; // Ограничение дистанции 5 блоков
+            raycaster.far = 5; 
             document.addEventListener('mousedown', onMouseClick);
 
-            // Генерация мира (Радиус 12, Камень -5)
+            // --- ГЕНЕРАЦИЯ МИРА ---
             const floorRadius = 12;
+            
+            // 1. Грязь (слои -5, -4, -3, -2, -1)
             for (let y = -5; y < 0; y++) {
                 for (let x = -floorRadius; x < floorRadius; x++) {
                     for (let z = -floorRadius; z < floorRadius; z++) {
-                        createBlock(x, y, z, materials[1]);
+                        createBlock(x, y, z, materials[1]); // Грязь
                     }
                 }
             }
+            // 2. Трава (слой 0)
             for (let x = -floorRadius; x < floorRadius; x++) {
                 for (let z = -floorRadius; z < floorRadius; z++) {
-                    createBlock(x, 0, z, materials[0]);
+                    createBlock(x, 0, z, materials[0]); // Трава
                 }
             }
 
@@ -247,7 +267,7 @@
             if (intersects.length > 0) {
                 const intersect = intersects[0];
                 if (!intersect.face) return;
-                if (intersect.distance > 5) return; // Проверка дистанции
+                if (intersect.distance > 5) return; 
 
                 if (event.button === 0) {
                     removeBlock(intersect.object);
@@ -258,7 +278,7 @@
                     const px = camera.position.x;
                     const py = camera.position.y;
                     const pz = camera.position.z;
-                    // Проверка, чтобы не поставить блок в себя
+                    // Анти-застревание
                     if (Math.abs(px - p.x) < 0.8 && Math.abs(pz - p.z) < 0.8 && (py - p.y) < 1.5 && (py - p.y) > -0.5) return;
 
                     const voxel = new THREE.Mesh(cubeGeo, materialToPlace);
@@ -288,7 +308,7 @@
                 
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-                velocity.y -= 30.0 * delta; // Гравитация
+                velocity.y -= 30.0 * delta; 
 
                 direction.z = Number(moveForward) - Number(moveBackward);
                 direction.x = Number(moveRight) - Number(moveLeft);
@@ -314,7 +334,6 @@
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
 
-                // --- ПРОВЕРКА СТЕН (Исправленная) ---
                 const kneeY = camera.position.y - playerHeight + 0.5; 
                 const headY = camera.position.y - 0.2; 
 
@@ -329,7 +348,6 @@
 
                 camera.position.y += (velocity.y * delta);
 
-                // --- ПРОВЕРКА ПОЛА ---
                 const feetY = camera.position.y - playerHeight;
                 const blockX = Math.round(camera.position.x);
                 const blockZ = Math.round(camera.position.z);
