@@ -2,9 +2,10 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft: Исправленная Ходьба</title>
+    <title>My Minecraft on GitHub</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+        
         #crosshair {
             position: absolute; top: 50%; left: 50%;
             width: 20px; height: 20px;
@@ -12,12 +13,14 @@
             transform: translate(-50%, -50%);
             pointer-events: none; z-index: 10;
         }
+
         #instructions {
             position: absolute; top: 10px; left: 10px;
             color: white; 
             background: rgba(0,0,0,0.6); padding: 15px; border-radius: 5px;
             pointer-events: none; user-select: none;
         }
+
         #hotbar {
             position: absolute; bottom: 20px; left: 50%;
             transform: translateX(-50%);
@@ -25,12 +28,14 @@
             background: rgba(0, 0, 0, 0.5); padding: 10px;
             border-radius: 10px; pointer-events: none;
         }
+
         .slot {
             width: 50px; height: 50px;
             border: 3px solid #555; background-color: rgba(0,0,0,0.3);
             display: flex; justify-content: center; align-items: center;
             color: white; font-weight: bold; font-size: 24px;
         }
+
         .slot.active {
             border-color: white; background-color: rgba(255, 255, 255, 0.2);
             transform: scale(1.1);
@@ -39,6 +44,7 @@
 </head>
 <body>
     <div id="crosshair"></div>
+    
     <div id="instructions">
         <b>Управление:</b><br>
         WASD - Ходить<br>
@@ -46,6 +52,7 @@
         1-3 - Блоки<br>
         ЛКМ - Ломать | ПКМ - Строить
     </div>
+
     <div id="hotbar">
         <div class="slot active" id="slot-0">1</div>
         <div class="slot" id="slot-1">2</div>
@@ -55,8 +62,8 @@
     <script type="importmap">
         {
             "imports": {
-                "three": "/node_modules/three/build/three.module.js",
-                "three/addons/": "/node_modules/three/examples/jsm/"
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
             }
         }
     </script>
@@ -79,7 +86,7 @@
         const direction = new THREE.Vector3();
         let prevTime = performance.now();
 
-        // НАСТРОЙКИ
+        // --- ВАШИ НАСТРОЙКИ (Сохранены) ---
         const WALK_SPEED = 30.0;
         const SPRINT_SPEED = 50.0;
         const CROUCH_SPEED = 10.0;
@@ -88,8 +95,6 @@
         const STAND_HEIGHT = 1.6;
         const CROUCH_HEIGHT = 1.2;
         let playerHeight = STAND_HEIGHT;
-        
-        // Размер игрока (чтобы не проходить сквозь углы)
         const PLAYER_WIDTH = 0.3; 
 
         let materials = [];
@@ -116,12 +121,13 @@
             controls = new PointerLockControls(camera, document.body);
             document.body.addEventListener('click', () => controls.lock());
             
+            // Загрузка текстур (Пути правильные для GitHub, если папка textures рядом)
             const loader = new THREE.TextureLoader();
             const fallbackMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
 
             try {
-                const grassTex = loader.load('textures/grass.png');
-                const stoneTex = loader.load('textures/stone.png');
+                const grassTex = loader.load('./textures/grass.png');
+                const stoneTex = loader.load('./textures/stone.png');
                 grassTex.magFilter = THREE.NearestFilter;
                 stoneTex.magFilter = THREE.NearestFilter;
 
@@ -131,8 +137,8 @@
 
                 materials = [grassMat, stoneMat, brickMat];
                 
-                document.getElementById('slot-0').style.background = 'url(textures/grass.png) center/cover';
-                document.getElementById('slot-1').style.background = 'url(textures/stone.png) center/cover';
+                document.getElementById('slot-0').style.background = 'url(./textures/grass.png) center/cover';
+                document.getElementById('slot-1').style.background = 'url(./textures/stone.png) center/cover';
                 document.getElementById('slot-2').style.backgroundColor = '#cc5555';
             } catch (e) {
                 materials = [fallbackMat, fallbackMat, fallbackMat];
@@ -183,10 +189,10 @@
             });
 
             raycaster = new THREE.Raycaster();
-            raycaster.far = 5; 
+            raycaster.far = 5; // Ограничение дистанции 5 блоков
             document.addEventListener('mousedown', onMouseClick);
 
-            // Генерация мира
+            // Генерация мира (Радиус 12, Камень -5)
             const floorRadius = 12;
             for (let y = -5; y < 0; y++) {
                 for (let x = -floorRadius; x < floorRadius; x++) {
@@ -207,7 +213,7 @@
             window.addEventListener('resize', onWindowResize);
         }
 
-        // --- ЛОГИКА КОЛЛИЗИЙ ---
+        // --- ЛОГИКА ---
         function getKey(x, y, z) {
             return `${x},${y},${z}`;
         }
@@ -229,9 +235,7 @@
             delete worldData[getKey(x, y, z)];
         }
 
-        // Проверка: есть ли блок в точке?
         function hasBlock(x, y, z) {
-            // Округляем до ближайшего целого (так как блоки стоят на 0, 1, 2...)
             return worldData[getKey(Math.round(x), Math.round(y), Math.round(z))];
         }
 
@@ -243,7 +247,7 @@
             if (intersects.length > 0) {
                 const intersect = intersects[0];
                 if (!intersect.face) return;
-                if (intersect.distance > 5) return;
+                if (intersect.distance > 5) return; // Проверка дистанции
 
                 if (event.button === 0) {
                     removeBlock(intersect.object);
@@ -251,11 +255,10 @@
                     const materialToPlace = materials[selectedSlot];
                     const p = intersect.object.position.clone().add(intersect.face.normal);
                     
-                    // Проверка, не застрянем ли мы в новом блоке
                     const px = camera.position.x;
                     const py = camera.position.y;
                     const pz = camera.position.z;
-                    // Простая проверка расстояния до центра нового блока
+                    // Проверка, чтобы не поставить блок в себя
                     if (Math.abs(px - p.x) < 0.8 && Math.abs(pz - p.z) < 0.8 && (py - p.y) < 1.5 && (py - p.y) > -0.5) return;
 
                     const voxel = new THREE.Mesh(cubeGeo, materialToPlace);
@@ -285,7 +288,7 @@
                 
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-                velocity.y -= 30.0 * delta;
+                velocity.y -= 30.0 * delta; // Гравитация
 
                 direction.z = Number(moveForward) - Number(moveBackward);
                 direction.x = Number(moveRight) - Number(moveLeft);
@@ -305,56 +308,42 @@
                 if (moveForward || moveBackward) velocity.z -= direction.z * currentSpeed * delta;
                 if (moveLeft || moveRight) velocity.x -= direction.x * currentSpeed * delta;
 
-                // --- 1. Сначала двигаем по X и Z ---
                 const oldX = camera.position.x;
                 const oldZ = camera.position.z;
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
 
-                // --- 2. ПРОВЕРКА СТЕН ---
-                // Важный момент: Мы проверяем блок не "в ногах" (внизу), а на уровне "колен"
-                // Это позволяет нам ходить по полу, не спотыкаясь об него
-                const kneeY = camera.position.y - playerHeight + 0.5; // +0.5 поднимает проверку выше пола
-                const headY = camera.position.y - 0.2; // Чуть ниже макушки
+                // --- ПРОВЕРКА СТЕН (Исправленная) ---
+                const kneeY = camera.position.y - playerHeight + 0.5; 
+                const headY = camera.position.y - 0.2; 
 
-                // Если врезались в блок на уровне колен или головы
                 if (hasBlock(camera.position.x, kneeY, camera.position.z) || 
                     hasBlock(camera.position.x, headY, camera.position.z)) {
                     
-                    // Отменяем движение
                     camera.position.x = oldX;
                     camera.position.z = oldZ;
                     velocity.x = 0;
                     velocity.z = 0;
                 }
 
-                // --- 3. Двигаем по Y (Гравитация) ---
                 camera.position.y += (velocity.y * delta);
 
-                // --- 4. ПРОВЕРКА ПОЛА ---
+                // --- ПРОВЕРКА ПОЛА ---
                 const feetY = camera.position.y - playerHeight;
-                
-                // Проверяем блок ровно под нами
-                // Округляем координаты X и Z, чтобы найти блок в сетке
                 const blockX = Math.round(camera.position.x);
                 const blockZ = Math.round(camera.position.z);
-                const blockY = Math.round(feetY - 0.5); // Блок, который должен быть под ногами
+                const blockY = Math.round(feetY - 0.5); 
 
                 if (hasBlock(blockX, blockY, blockZ)) {
-                    // Высота поверхности этого блока
                     const groundLevel = blockY + 0.5;
-                    
-                    // Если наши ноги (feetY) опустились ниже уровня земли
                     if (feetY < groundLevel && velocity.y < 0) {
-                        // Ставим игрока ровно на поверхность
                         camera.position.y = groundLevel + playerHeight;
                         velocity.y = 0;
                         canJump = true;
                     }
                 }
                 
-                // Спасение при падении в бездну
                 if (camera.position.y < -30) {
                     camera.position.set(0, 20, 0);
                     velocity.y = 0;
