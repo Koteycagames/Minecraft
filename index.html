@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft: Stable Physics 2.0</title>
+    <title>Minecraft: Fixed Movement & Pillar Jump</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
@@ -132,7 +132,6 @@
         let isSprinting = false;
         let isCrouching = false;
         
-        // Инвентарь
         let isInventoryOpen = false;
         let holdingBlockIndex = null; 
         let hotbarContent = [null, null, null, null, null]; 
@@ -150,8 +149,6 @@
         const STAND_HEIGHT = 1.6;
         const CROUCH_HEIGHT = 1.2;
         let playerHeight = STAND_HEIGHT;
-        
-        // Увеличиваем радиус игрока, чтобы он не подходил близко к стенам
         const PLAYER_RADIUS = 0.3; 
 
         let materials = [];
@@ -173,8 +170,7 @@
             scene.background = new THREE.Color(0x87CEEB);
             scene.fog = new THREE.Fog(0x87CEEB, 10, 60);
 
-            // ОЧЕНЬ МАЛЕНЬКИЙ NEAR (0.005), чтобы камера не обрезала текстуры в упор
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.005, 1000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
             camera.position.set(0, 15, 0);
 
             const ambientLight = new THREE.AmbientLight(0xcccccc);
@@ -185,20 +181,13 @@
 
             controls = new PointerLockControls(camera, document.body);
             
-            // UI элементы
             const invScreen = document.getElementById('inventory-screen');
             const instructions = document.getElementById('instructions');
 
-            // Обработчик клика для лока
             document.body.addEventListener('click', (e) => {
                 if (isInventoryOpen) return;
-                // Игнорируем клики по интерфейсу
                 if (e.target.closest('#hotbar') || e.target.closest('#inventory-screen')) return;
-                
-                // Пытаемся залочить только если не залочено
-                if (!controls.isLocked) {
-                    controls.lock();
-                }
+                if (!controls.isLocked) controls.lock();
             });
 
             controls.addEventListener('lock', () => {
@@ -210,12 +199,9 @@
             });
 
             controls.addEventListener('unlock', () => {
-                if (!isInventoryOpen) {
-                    instructions.style.display = 'block';
-                }
+                if (!isInventoryOpen) instructions.style.display = 'block';
             });
             
-            // Текстуры
             const loader = new THREE.TextureLoader();
             const fallbackMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
 
@@ -232,7 +218,6 @@
                 materials = [fallbackMat];
             }
 
-            // Клавиши
             const onKeyDown = (e) => {
                 switch (e.code) {
                     case 'KeyE':
@@ -275,7 +260,6 @@
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
 
-            // Колесико
             document.addEventListener('wheel', (event) => {
                 if (isInventoryOpen) return;
                 if (event.deltaY > 0) {
@@ -289,7 +273,6 @@
                 }
             });
 
-            // Мышь в инвентаре
             document.addEventListener('mousemove', (e) => {
                 if (isInventoryOpen && holdingBlockIndex !== null) {
                     const cursorItem = document.getElementById('cursor-item');
@@ -302,7 +285,7 @@
             raycaster.far = 5; 
             document.addEventListener('mousedown', onMouseClick);
 
-            // Генерация мира
+            // Генерация
             const floorRadius = 12;
             for (let y = -5; y < 0; y++) {
                 for (let x = -floorRadius; x < floorRadius; x++) {
@@ -398,7 +381,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // --- УЛУЧШЕННАЯ ОБРАБОТКА КЛИКОВ (СТРОЙКА) ---
+        // --- ЛОГИКА СТРОЙКИ ---
         function onMouseClick(event) {
             if (isInventoryOpen) return;
             if (!controls.isLocked) return;
@@ -420,17 +403,20 @@
                     const materialToPlace = materials[matIndex];
                     const p = intersect.object.position.clone().add(intersect.face.normal);
                     
-                    // Проверяем коллизию нового блока с игроком (по всем осям)
-                    // Используем PLAYER_RADIUS для точной проверки
+                    // --- ИСПРАВЛЕНИЕ: ПРОВЕРКА НА ЗАСТРЕВАНИЕ ---
                     const dx = Math.abs(camera.position.x - p.x);
                     const dz = Math.abs(camera.position.z - p.z);
-                    const py = camera.position.y;
                     
-                    // Если блок ставится в ноги или голову
-                    if (dx < (0.5 + PLAYER_RADIUS) && dz < (0.5 + PLAYER_RADIUS)) {
-                         if (p.y < py && p.y > (py - playerHeight - 0.5)) {
-                             return; // Нельзя ставить блок в себя
-                         }
+                    const blockTop = p.y + 0.5;
+                    const playerFeet = camera.position.y - playerHeight;
+
+                    // Если блок близко к игроку по горизонтали
+                    if (dx < 0.7 && dz < 0.7) {
+                        // Если ноги игрока ниже, чем верх блока (то есть мы внутри или снизу)
+                        // НО даем маленький допуск (0.1), чтобы можно было делать Pillar Jump
+                        if (playerFeet < blockTop - 0.2) {
+                            return; // Блокируем, чтобы не застрять
+                        }
                     }
 
                     const voxel = new THREE.Mesh(cubeGeo, materialToPlace);
@@ -440,14 +426,13 @@
             }
         }
 
-        // --- УЛУЧШЕННАЯ ФИЗИКА (SUB-STEPPING) ---
+        // --- ЛОГИКА СТЕН (Исправленная) ---
         function checkCollisionPlayer(newX, newZ) {
-            // Проверяем 4 угла вокруг игрока, чтобы он не задевал стены боком
             const r = PLAYER_RADIUS;
-            const yFeet = Math.floor(camera.position.y - playerHeight + 0.1); // Чуть выше пола
-            const yHead = Math.floor(camera.position.y - 0.1); // Чуть ниже потолка
+            // ИСПРАВЛЕНИЕ: Поднимаем проверку ног на +0.5, чтобы не цеплять пол
+            const yFeet = Math.floor(camera.position.y - playerHeight + 0.5); 
+            const yHead = Math.floor(camera.position.y - 0.1); 
             
-            // Проверяем наличие блоков в точках окружности игрока
             if (hasBlock(newX + r, yFeet, newZ + r) || hasBlock(newX + r, yHead, newZ + r) ||
                 hasBlock(newX - r, yFeet, newZ + r) || hasBlock(newX - r, yHead, newZ + r) ||
                 hasBlock(newX + r, yFeet, newZ - r) || hasBlock(newX + r, yHead, newZ - r) ||
@@ -462,7 +447,6 @@
             
             if (controls.isLocked && !isInventoryOpen) {
                 const time = performance.now();
-                // Защита от лагов: если FPS упал, считаем максимум за 0.05 сек
                 const delta = Math.min((time - prevTime) / 1000, 0.05); 
                 
                 velocity.x -= velocity.x * 10.0 * delta;
@@ -481,29 +465,22 @@
                 if (moveForward || moveBackward) velocity.z -= direction.z * currentSpeed * delta;
                 if (moveLeft || moveRight) velocity.x -= direction.x * currentSpeed * delta;
 
-                // --- ГОРИЗОНТАЛЬНОЕ ДВИЖЕНИЕ С ПРОВЕРКОЙ ---
                 const moveX = -velocity.x * delta;
                 const moveZ = -velocity.z * delta;
 
-                // Пробуем двигать по X
                 controls.moveRight(moveX);
                 if (checkCollisionPlayer(camera.position.x, camera.position.z)) {
-                    controls.moveRight(-moveX); // Отменяем, если врезались
+                    controls.moveRight(-moveX); 
                     velocity.x = 0;
                 }
 
-                // Пробуем двигать по Z
                 controls.moveForward(moveZ);
                 if (checkCollisionPlayer(camera.position.x, camera.position.z)) {
-                    controls.moveForward(-moveZ); // Отменяем
+                    controls.moveForward(-moveZ); 
                     velocity.z = 0;
                 }
 
-                // --- ВЕРТИКАЛЬНОЕ ДВИЖЕНИЕ (SUB-STEPS) ---
-                // Разбиваем падение на мелкие шаги, чтобы не пролетать пол
                 let remainingY = velocity.y * delta;
-                
-                // Двигаем по чуть-чуть (например, по 10% блока)
                 while (Math.abs(remainingY) > 0) {
                     const step = Math.sign(remainingY) * Math.min(Math.abs(remainingY), 0.1);
                     camera.position.y += step;
@@ -513,29 +490,23 @@
                     const blockX = Math.round(camera.position.x);
                     const blockZ = Math.round(camera.position.z);
 
-                    // Если падаем вниз и ударились о блок
                     if (step < 0 && hasBlock(blockX, blockY, blockZ)) {
                         const groundLevel = blockY + 0.5;
-                        if (feetY < groundLevel + 0.1) { // +0.1 допуск
+                        if (feetY < groundLevel + 0.1) { 
                             camera.position.y = groundLevel + playerHeight;
                             velocity.y = 0;
                             canJump = true;
-                            remainingY = 0; // Останавливаем цикл
+                            remainingY = 0; 
                             break;
                         }
                     }
-                    
-                    // Если летим вверх и ударились головой
-                    const headY = Math.floor(camera.position.y + 0.2); // Чуть выше камеры
+                    const headY = Math.floor(camera.position.y + 0.2); 
                     if (step > 0 && hasBlock(blockX, headY, blockZ)) {
                          velocity.y = 0;
                          remainingY = 0;
                          break;
                     }
-
                     remainingY -= step;
-                    
-                    // Защита от бесконечного цикла (на всякий случай)
                     if (Math.abs(step) < 0.001) break; 
                 }
 
