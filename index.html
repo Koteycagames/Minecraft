@@ -2,11 +2,10 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft: Menu & Lobbies</title>
+    <title>Minecraft: Full Sync & Smooth Jump</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
-        /* --- ИГРОВОЙ ИНТЕРФЕЙС (Скрыт в меню) --- */
         #game-ui { display: none; }
 
         #crosshair {
@@ -84,16 +83,13 @@
             border: 2px solid yellow;
         }
 
-        /* --- ГЛАВНОЕ МЕНЮ --- */
         #main-menu {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: url('./textures/dirt.png'); /* Фон меню */
+            background: url('./textures/dirt.png'); 
             display: flex; flex-direction: column;
             justify-content: center; align-items: center;
             z-index: 999;
         }
-        
-        /* Затемнение фона меню */
         #main-menu::before {
             content: ""; position: absolute; top:0; left:0; width:100%; height:100%;
             background: rgba(0,0,0,0.7); z-index: -1;
@@ -116,19 +112,16 @@
             font-family: 'Courier New', Courier, monospace; font-size: 20px;
             background: black; color: white; border: 2px solid #555;
         }
-
     </style>
 </head>
 <body>
 
     <div id="main-menu">
         <h1>MINECRAFT JS</h1>
-        
         <div id="main-buttons">
             <button class="menu-btn" id="btn-single">Одиночная игра</button>
             <button class="menu-btn" id="btn-multi">Сетевая игра</button>
         </div>
-
         <div id="multiplayer-panel">
             <button class="menu-btn" id="btn-create">Создать лобби</button>
             <div style="color:white; margin: 10px;">--- ИЛИ ---</div>
@@ -141,28 +134,18 @@
     <div id="game-ui">
         <div id="crosshair"></div>
         <div id="instructions">
-            <b>Управление</b><br>
-            WASD - Ходить | Space - Прыжок<br>
-            E - Инвентарь | ЛКМ/ПКМ - Блоки
+            <b>Управление</b><br>WASD - Ходить | Space - Прыжок<br>E - Инвентарь | ЛКМ/ПКМ - Блоки
         </div>
         <div id="lobby-info"></div>
-        
         <div id="hotbar">
-            <div class="slot active" id="slot-0"></div>
-            <div class="slot" id="slot-1"></div>
-            <div class="slot" id="slot-2"></div>
-            <div class="slot" id="slot-3"></div>
-            <div class="slot" id="slot-4"></div>
+            <div class="slot active" id="slot-0"></div><div class="slot" id="slot-1"></div>
+            <div class="slot" id="slot-2"></div><div class="slot" id="slot-3"></div><div class="slot" id="slot-4"></div>
         </div>
-        
         <div id="inventory-screen">
             <div id="inventory-container">
                 <div style="font-weight:bold; margin-bottom:5px;">Блоки:</div>
                 <div class="inv-grid" id="creative-grid"></div>
-                <div style="text-align: center; color: #333; margin-top: 10px; font-size: 14px;">
-                    Кликни на блок -> Кликни на слот.<br>
-                    Нажми <b>E</b>, чтобы играть.
-                </div>
+                <div style="text-align: center; color: #333; margin-top: 10px; font-size: 14px;">Кликни на блок -> Кликни на слот.<br>Нажми <b>E</b>, чтобы играть.</div>
             </div>
         </div>
         <div id="cursor-item"></div>
@@ -183,7 +166,7 @@
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
         import { initializeApp } from "firebase-app";
-        import { getDatabase, ref, set, onChildAdded, onChildChanged, onChildRemoved, onDisconnect } from "firebase-database";
+        import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect } from "firebase-database";
 
         // --- FIREBASE CONFIG ---
         const firebaseConfig = {
@@ -198,15 +181,17 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         
-        // --- ПЕРЕМЕННЫЕ ИГРЫ ---
+        // --- ПЕРЕМЕННЫЕ ---
         let isMultiplayer = false;
         let currentLobbyId = null;
         let playerId = 'player_' + Math.random().toString(36).substr(2, 9);
         let playerRef = null;
+        let worldRef = null;
 
         let camera, scene, renderer, controls;
         const objects = []; 
-        const worldData = {}; 
+        const worldData = {}; // Локальное хранение для физики
+        const objectsMap = {}; // Карта: "x,y,z" -> Mesh (для удаления)
         let raycaster;
         const otherPlayers = {}; 
         
@@ -225,10 +210,14 @@
         let prevTime = performance.now();
         let lastUploadTime = 0; 
 
+        // --- ФИЗИКА (ПЛАВНАЯ) ---
         const WALK_SPEED = 30.0;
         const SPRINT_SPEED = 50.0;
         const CROUCH_SPEED = 10.0;
-        const JUMP_FORCE = 9; // ВАШ ИДЕАЛЬНЫЙ ПРЫЖОК
+        const JUMP_FORCE = 9; 
+        // Снизил гравитацию для более плавного прыжка (было 30)
+        const GRAVITY = 24.0; 
+        
         const STAND_HEIGHT = 1.6;
         const CROUCH_HEIGHT = 1.2;
         let playerHeight = STAND_HEIGHT;
@@ -244,75 +233,63 @@
         ];
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
 
-        // --- ЛОГИКА МЕНЮ ---
+        // --- МЕНЮ ---
         const mainMenu = document.getElementById('main-menu');
         const mainButtons = document.getElementById('main-buttons');
         const multiPanel = document.getElementById('multiplayer-panel');
         const gameUI = document.getElementById('game-ui');
         const lobbyInfo = document.getElementById('lobby-info');
 
-        // Кнопки
-        document.getElementById('btn-single').onclick = () => {
-            isMultiplayer = false;
-            startGame();
-        };
-
-        document.getElementById('btn-multi').onclick = () => {
-            mainButtons.style.display = 'none';
-            multiPanel.style.display = 'flex';
-        };
-
-        document.getElementById('btn-back').onclick = () => {
-            multiPanel.style.display = 'none';
-            mainButtons.style.display = 'flex';
-        };
-
+        document.getElementById('btn-single').onclick = () => { isMultiplayer = false; startGame(); };
+        document.getElementById('btn-multi').onclick = () => { mainButtons.style.display = 'none'; multiPanel.style.display = 'flex'; };
+        document.getElementById('btn-back').onclick = () => { multiPanel.style.display = 'none'; mainButtons.style.display = 'flex'; };
         document.getElementById('btn-create').onclick = () => {
-            // Генерируем код лобби (например, 5521)
             const code = Math.floor(1000 + Math.random() * 9000).toString();
             startMultiplayer(code);
         };
-
         document.getElementById('btn-join').onclick = () => {
             const code = document.getElementById('lobby-code-input').value;
-            if (code.length > 0) {
-                startMultiplayer(code);
-            } else {
-                alert("Введите код!");
-            }
+            if (code.length > 0) startMultiplayer(code);
+            else alert("Введите код!");
         };
 
         function startMultiplayer(lobbyCode) {
             isMultiplayer = true;
             currentLobbyId = lobbyCode;
-            
             lobbyInfo.style.display = 'block';
             lobbyInfo.innerText = "Лобби: " + lobbyCode;
             
-            // Настраиваем Firebase на конкретное лобби
             playerRef = ref(db, `lobbies/${currentLobbyId}/players/${playerId}`);
             onDisconnect(playerRef).remove();
             
+            // Игроки
             const playersRef = ref(db, `lobbies/${currentLobbyId}/players`);
+            onChildAdded(playersRef, (snapshot) => { if (snapshot.key !== playerId) createOtherPlayer(snapshot.key, snapshot.val()); });
+            onChildChanged(playersRef, (snapshot) => { if (snapshot.key !== playerId && otherPlayers[snapshot.key]) updateOtherPlayer(snapshot.key, snapshot.val()); });
+            onChildRemoved(playersRef, (snapshot) => { if (otherPlayers[snapshot.key]) { scene.remove(otherPlayers[snapshot.key].mesh); delete otherPlayers[snapshot.key]; } });
 
-            // Слушаем других
-            onChildAdded(playersRef, (snapshot) => {
-                const id = snapshot.key;
-                const data = snapshot.val();
-                if (id !== playerId) createOtherPlayer(id, data);
+            // СИНХРОНИЗАЦИЯ БЛОКОВ (МИР)
+            worldRef = ref(db, `lobbies/${currentLobbyId}/world`);
+            
+            // Кто-то поставил блок
+            onChildAdded(worldRef, (snapshot) => {
+                const key = snapshot.key; // "x_y_z"
+                const matIndex = snapshot.val();
+                const [x, y, z] = key.split('_').map(Number);
+                
+                // Если блок уже есть локально (например, мы сами его поставили), не дублируем
+                if (!hasBlock(x, y, z)) {
+                    createBlock(x, y, z, materials[matIndex], true); // true = пришло из сети
+                }
             });
 
-            onChildChanged(playersRef, (snapshot) => {
-                const id = snapshot.key;
-                const data = snapshot.val();
-                if (id !== playerId && otherPlayers[id]) updateOtherPlayer(id, data);
-            });
-
-            onChildRemoved(playersRef, (snapshot) => {
-                const id = snapshot.key;
-                if (otherPlayers[id]) {
-                    scene.remove(otherPlayers[id].mesh);
-                    delete otherPlayers[id];
+            // Кто-то сломал блок
+            onChildRemoved(worldRef, (snapshot) => {
+                const key = snapshot.key;
+                const [x, y, z] = key.split('_').map(Number);
+                const mesh = objectsMap[getKey(x, y, z)];
+                if (mesh) {
+                    removeBlockLocal(mesh);
                 }
             });
 
@@ -322,18 +299,11 @@
         function startGame() {
             mainMenu.style.display = 'none';
             gameUI.style.display = 'block';
-            
             init();
             animate();
-            
-            // Сразу просим кликнуть для захвата
-            setTimeout(() => {
-                // Браузеры запрещают лок без клика, но мы попробуем или подождем клика игрока
-                alert("Кликни по экрану, чтобы начать!");
-            }, 100);
+            setTimeout(() => { alert("Кликни по экрану, чтобы начать!"); }, 100);
         }
 
-        // --- ИНИЦИАЛИЗАЦИЯ ИГРЫ ---
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB);
@@ -350,14 +320,11 @@
 
             controls = new PointerLockControls(camera, document.body);
             
-            // Обработчики клика (UI)
             const invScreen = document.getElementById('inventory-screen');
             const instructions = document.getElementById('instructions');
 
             document.body.addEventListener('click', (e) => {
-                // Если мы еще в меню, ничего не делаем
                 if (mainMenu.style.display !== 'none') return;
-                
                 if (isInventoryOpen) return;
                 if (e.target.closest('#hotbar') || e.target.closest('#inventory-screen')) return;
                 if (!controls.isLocked) controls.lock();
@@ -375,7 +342,6 @@
                 if (!isInventoryOpen) instructions.style.display = 'block';
             });
             
-            // Текстуры
             const loader = new THREE.TextureLoader();
             const fallbackMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
 
@@ -392,7 +358,6 @@
                 materials = [fallbackMat];
             }
 
-            // Клавиши
             const onKeyDown = (e) => {
                 switch (e.code) {
                     case 'KeyE':
@@ -460,18 +425,20 @@
             raycaster.far = 5; 
             document.addEventListener('mousedown', onMouseClick);
 
-            // Генерация
+            // Начальная генерация земли (только если мы не получили ее из сети,
+            // но в этой версии мы генерируем базу всегда, а сеть дополняет)
             const floorRadius = 12;
             for (let y = -5; y < 0; y++) {
                 for (let x = -floorRadius; x < floorRadius; x++) {
                     for (let z = -floorRadius; z < floorRadius; z++) {
-                        createBlock(x, y, z, materials[1]); 
+                        // Если из сети уже пришел блок, не перетираем его
+                        if (!hasBlock(x, y, z)) createBlock(x, y, z, materials[1], true); 
                     }
                 }
             }
             for (let x = -floorRadius; x < floorRadius; x++) {
                 for (let z = -floorRadius; z < floorRadius; z++) {
-                    createBlock(x, 0, z, materials[0]); 
+                    if (!hasBlock(x, 0, z)) createBlock(x, 0, z, materials[0], true); 
                 }
             }
 
@@ -481,7 +448,7 @@
             window.addEventListener('resize', onWindowResize);
         }
 
-        // --- ФУНКЦИИ СЕТИ ---
+        // --- МУЛЬТИПЛЕЕР И СИНХРОНИЗАЦИЯ ---
         function createOtherPlayer(id, data) {
             const geometry = new THREE.BoxGeometry(0.6, 1.8, 0.6);
             const material = new THREE.MeshLambertMaterial({ color: 0xff0000 });
@@ -512,17 +479,61 @@
             });
         }
 
-        // --- ФУНКЦИИ ИНВЕНТАРЯ И МИРА ---
+        function getKey(x, y, z) { return `${x},${y},${z}`; }
+
+        function createBlock(x, y, z, mat, isFromNetwork = false) {
+            const voxel = new THREE.Mesh(cubeGeo, mat);
+            voxel.position.set(x, y, z);
+            scene.add(voxel);
+            objects.push(voxel);
+            
+            const key = getKey(x, y, z);
+            worldData[key] = true;
+            objectsMap[key] = voxel;
+
+            // Если это поставили МЫ в мультиплеере, отправляем в сеть
+            if (isMultiplayer && !isFromNetwork) {
+                // Находим индекс материала
+                let matIndex = materials.indexOf(mat);
+                set(ref(db, `lobbies/${currentLobbyId}/world/${x}_${y}_${z}`), matIndex);
+            }
+        }
+
+        function removeBlockLocal(object) {
+            scene.remove(object);
+            objects.splice(objects.indexOf(object), 1);
+            const x = Math.round(object.position.x);
+            const y = Math.round(object.position.y);
+            const z = Math.round(object.position.z);
+            const key = getKey(x, y, z);
+            delete worldData[key];
+            delete objectsMap[key];
+        }
+
+        function removeBlock(object) {
+            const x = Math.round(object.position.x);
+            const y = Math.round(object.position.y);
+            const z = Math.round(object.position.z);
+
+            // Удаляем локально
+            removeBlockLocal(object);
+
+            // Если мультиплеер, отправляем команду удаления
+            if (isMultiplayer) {
+                remove(ref(db, `lobbies/${currentLobbyId}/world/${x}_${y}_${z}`));
+            }
+        }
+
+        // --- ЛОГИКА ИГРЫ ---
+        function hasBlock(x, y, z) { return worldData[getKey(Math.round(x), Math.round(y), Math.round(z))]; }
+        
         function initInventoryUI() {
             const grid = document.getElementById('creative-grid');
             textureUrls.forEach((url, index) => {
                 const el = document.createElement('div');
                 el.className = 'inv-slot';
                 el.style.backgroundImage = `url(${url})`;
-                el.onclick = () => {
-                    holdingBlockIndex = index;
-                    updateCursorItem(url);
-                };
+                el.onclick = () => { holdingBlockIndex = index; updateCursorItem(url); };
                 grid.appendChild(el);
             });
             for (let i = 0; i < 5; i++) {
@@ -539,42 +550,16 @@
         }
         function updateCursorItem(url) {
             const cursorItem = document.getElementById('cursor-item');
-            if (url) {
-                cursorItem.style.display = 'block';
-                cursorItem.style.backgroundImage = `url(${url})`;
-            } else {
-                cursorItem.style.display = 'none';
-            }
+            if (url) { cursorItem.style.display = 'block'; cursorItem.style.backgroundImage = `url(${url})`; } 
+            else { cursorItem.style.display = 'none'; }
         }
         function updateHotbarUI() {
             for (let i = 0; i < 5; i++) {
                 const slotEl = document.getElementById(`slot-${i}`);
                 const materialIndex = hotbarContent[i];
-                if (materialIndex !== null && materialIndex !== undefined) {
-                    slotEl.style.backgroundImage = `url(${textureUrls[materialIndex]})`;
-                } else {
-                    slotEl.style.backgroundImage = 'none';
-                }
+                if (materialIndex !== null && materialIndex !== undefined) slotEl.style.backgroundImage = `url(${textureUrls[materialIndex]})`;
+                else slotEl.style.backgroundImage = 'none';
             }
-        }
-        function getKey(x, y, z) { return `${x},${y},${z}`; }
-        function createBlock(x, y, z, mat) {
-            const voxel = new THREE.Mesh(cubeGeo, mat);
-            voxel.position.set(x, y, z);
-            scene.add(voxel);
-            objects.push(voxel);
-            worldData[getKey(x, y, z)] = true;
-        }
-        function removeBlock(object) {
-            scene.remove(object);
-            objects.splice(objects.indexOf(object), 1);
-            const x = Math.round(object.position.x);
-            const y = Math.round(object.position.y);
-            const z = Math.round(object.position.z);
-            delete worldData[getKey(x, y, z)];
-        }
-        function hasBlock(x, y, z) {
-            return worldData[getKey(Math.round(x), Math.round(y), Math.round(z))];
         }
         function selectSlot(index) {
             selectedSlot = index;
@@ -587,7 +572,6 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // --- ЛОГИКА СТРОЙКИ ---
         function onMouseClick(event) {
             if (isInventoryOpen) return;
             if (!controls.isLocked) return;
@@ -612,30 +596,21 @@
                     const dz = Math.abs(camera.position.z - p.z);
                     const blockTop = p.y + 0.5;
                     const playerFeet = camera.position.y - playerHeight;
+                    if (dx < 0.7 && dz < 0.7 && playerFeet < blockTop - 0.2) return;
 
-                    if (dx < 0.7 && dz < 0.7) {
-                        if (playerFeet < blockTop - 0.2) return;
-                    }
-
-                    const voxel = new THREE.Mesh(cubeGeo, materialToPlace);
-                    voxel.position.copy(p);
-                    createBlock(p.x, p.y, p.z, materialToPlace);
+                    createBlock(p.x, p.y, p.z, materialToPlace); // Отправит в сеть внутри функции
                 }
             }
         }
 
-        // --- ФИЗИКА И АНИМАЦИЯ ---
         function checkCollisionPlayer(newX, newZ) {
             const r = PLAYER_RADIUS;
             const yFeet = Math.floor(camera.position.y - playerHeight + 0.5); 
             const yHead = Math.floor(camera.position.y - 0.1); 
-            
             if (hasBlock(newX + r, yFeet, newZ + r) || hasBlock(newX + r, yHead, newZ + r) ||
                 hasBlock(newX - r, yFeet, newZ + r) || hasBlock(newX - r, yHead, newZ + r) ||
                 hasBlock(newX + r, yFeet, newZ - r) || hasBlock(newX + r, yHead, newZ - r) ||
-                hasBlock(newX - r, yFeet, newZ - r) || hasBlock(newX - r, yHead, newZ - r)) {
-                return true;
-            }
+                hasBlock(newX - r, yFeet, newZ - r) || hasBlock(newX - r, yHead, newZ - r)) return true;
             return false;
         }
 
@@ -654,28 +629,56 @@
             requestAnimationFrame(animate);
             const time = performance.now();
 
-            if (controls && controls.isLocked && !isInventoryOpen) {
+            // ЛОГИКА ПАУЗЫ:
+            // В одиночной: если меню открыто или инвентарь - физика не работает.
+            // В мультиплеере: физика работает ВСЕГДА, но управление (WASD) только если залочен.
+            
+            let shouldRunPhysics = false;
+            let shouldProcessInput = false;
+
+            if (isMultiplayer) {
+                // В МП мир живет всегда, пока мы в игре (не в главном меню)
+                if (gameUI.style.display !== 'none') {
+                    shouldRunPhysics = true;
+                    // Управление работает только если курсор захвачен и инвентарь закрыт
+                    if (controls.isLocked && !isInventoryOpen) shouldProcessInput = true;
+                }
+            } else {
+                // В одиночке всё стопорится при паузе
+                if (controls.isLocked && !isInventoryOpen) {
+                    shouldRunPhysics = true;
+                    shouldProcessInput = true;
+                }
+            }
+
+            if (shouldRunPhysics) {
                 const delta = Math.min((time - prevTime) / 1000, 0.05); 
                 
+                // Трение (замедление, если кнопки не нажаты)
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
-                velocity.y -= 30.0 * delta;
+                velocity.y -= GRAVITY * delta; // Плавная гравитация
 
-                direction.z = Number(moveForward) - Number(moveBackward);
-                direction.x = Number(moveRight) - Number(moveLeft);
-                direction.normalize();
+                if (shouldProcessInput) {
+                    direction.z = Number(moveForward) - Number(moveBackward);
+                    direction.x = Number(moveRight) - Number(moveLeft);
+                    direction.normalize();
 
-                let currentSpeed = WALK_SPEED;
-                if (isCrouching) { currentSpeed = CROUCH_SPEED; playerHeight = CROUCH_HEIGHT; } 
-                else if (isSprinting) { currentSpeed = SPRINT_SPEED; playerHeight = STAND_HEIGHT; } 
-                else { playerHeight = STAND_HEIGHT; }
+                    let currentSpeed = WALK_SPEED;
+                    if (isCrouching) { currentSpeed = CROUCH_SPEED; playerHeight = CROUCH_HEIGHT; } 
+                    else if (isSprinting) { currentSpeed = SPRINT_SPEED; playerHeight = STAND_HEIGHT; } 
+                    else { playerHeight = STAND_HEIGHT; }
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * currentSpeed * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * currentSpeed * delta;
+                    if (moveForward || moveBackward) velocity.z -= direction.z * currentSpeed * delta;
+                    if (moveLeft || moveRight) velocity.x -= direction.x * currentSpeed * delta;
+                }
 
+                // Применяем движение
                 const moveX = -velocity.x * delta;
                 const moveZ = -velocity.z * delta;
 
+                // Двигаем камеру только если мы "владеем" телом (в МП мы всегда владеем, просто не жмем кнопки)
+                // Но controls.moveRight двигает камеру относительно взгляда.
                 controls.moveRight(moveX);
                 if (checkCollisionPlayer(camera.position.x, camera.position.z)) {
                     controls.moveRight(-moveX); 
@@ -702,13 +705,15 @@
                             if (feetY < groundLevel + 0.1) { 
                                 camera.position.y = groundLevel + playerHeight;
                                 velocity.y = 0;
-                                canJump = true;
+                                canJump = true; // Разрешаем прыжок
                                 remainingY = 0; 
                                 break;
                             }
                         }
                     }
                     const headY = Math.floor(camera.position.y + 0.2); 
+                    const blockX = Math.round(camera.position.x);
+                    const blockZ = Math.round(camera.position.z);
                     if (step > 0 && hasBlock(blockX, headY, blockZ)) {
                          velocity.y = 0;
                          remainingY = 0;
@@ -723,12 +728,11 @@
                     velocity.y = 0;
                 }
 
-                // Отправка данных (только если мультиплеер)
+                // Отправка данных
                 if (isMultiplayer && (time - lastUploadTime > 40)) {
                     uploadMyPosition();
                     lastUploadTime = time;
                 }
-
                 prevTime = time;
             } else {
                 prevTime = performance.now();
