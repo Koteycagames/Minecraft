@@ -111,7 +111,18 @@
         const WALK=5.0, SPRINT=8.0, CROUCH=3.0, JUMP=9, GRAVITY=24.0, P_W=0.9, P_H=1.8, EYE=1.6;
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
-        const texUrls = ['./textures/grass.png', './textures/dirt.png', './textures/stone.png', './textures/obsidian.png', './textures/iron.png'];
+        const const texUrls = [
+            './textures/grass.png',    // 0
+            './textures/dirt.png',     // 1
+            './textures/stone.png',    // 2
+            './textures/obsidian.png', // 3
+            './textures/iron.png',     // 4
+            './textures/log.png',      // 5: Бревно
+            './textures/planks.png',   // 6: Доски
+            './textures/brick.png',    // 7: Кирпич
+            './textures/sand.png',     // 8: Песок
+            './textures/diamond.png'   // 9: Алмаз
+        ];
         let hotbar = [null,null,null,null,null], selSlot=0, holdBlock=null;
 
         // --- INITIALIZATION FLOW ---
