@@ -2,31 +2,27 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: Client Fixed</title>
+    <title>Minecraft JS: New Blocks</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; background: #000; }
         
-        /* UI ИГРЫ */
-        #game-ui { display: none; } /* Скрыто по умолчанию */
+        #game-ui { display: none; }
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); z-index: 10; pointer-events: none; }
         #hotbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 10px; z-index: 150; }
         .slot { width: 60px; height: 60px; border: 4px solid #555; background-color: rgba(0,0,0,0.4); background-size: cover; cursor: pointer; }
         .slot.active { border-color: white; transform: scale(1.1); background-color: rgba(255,255,255,0.1); }
         #info-panel { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.5); padding: 10px; pointer-events: none; font-weight: bold; }
 
-        /* МЕНЮ */
         .overlay-menu { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
         .mc-btn { width: 300px; padding: 15px; margin: 10px; font-size: 20px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; text-shadow: 2px 2px #000; }
         .mc-btn:hover { background: #888; color: white; border-color: #777; }
         
-        /* ИНВЕНТАРЬ */
         .inv-grid { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 400px; }
         .inv-slot { width: 50px; height: 50px; border: 2px solid #888; background: #8b8b8b; cursor: pointer; background-size: cover; }
         #cursor-item { position: absolute; width: 40px; height: 40px; pointer-events: none; z-index: 200; background-size: cover; display: none; border: 2px solid yellow; }
 
-        /* ЭКРАН ЗАГРУЗКИ / ОШИБКИ */
         #screen-error { 
-            display: flex; /* Показываем сразу при загрузке */
+            display: flex; 
             position: absolute; top:0; left:0; width:100%; height:100%; 
             background: url('./textures/dirt.png'); 
             z-index: 9999; 
@@ -39,7 +35,7 @@
         }
         .err-title { font-size: 26px; color: #ffffff; margin-bottom: 20px; font-weight: bold; text-shadow: 2px 2px #333; }
         .err-desc { font-size: 18px; color: #aaaaaa; margin-bottom: 40px; max-width: 600px; line-height: 1.5; text-shadow: 1px 1px #222; }
-        #btn-menu { display: none; } /* Скрыта пока идет загрузка */
+        #btn-menu { display: none; }
     </style>
 </head>
 <body>
@@ -85,10 +81,9 @@
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
         import { initializeApp } from "firebase-app";
-        import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get } from "firebase-database";
+        import { getDatabase, ref, set, update, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get } from "firebase-database";
         import { getAuth, onAuthStateChanged } from "firebase-auth";
 
-        // --- SETUP ---
         const MODE = localStorage.getItem('mc_mode'); 
         const WORLD_NAME = localStorage.getItem('mc_current_world');
         const LOBBY_ID = localStorage.getItem('mc_lobby_id');
@@ -100,8 +95,7 @@
         const auth = getAuth(app);
         let currentUser = null, playerRef = null, statusRef = null;
 
-        // --- GAME VARS ---
-        let camera, scene, renderer, controls = null; // Controls is null initially!
+        let camera, scene, renderer, controls = null;
         const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
         let isPaused = false, isGameRunning = false, isInvOpen = false;
         let moveF=0, moveB=0, moveL=0, moveR=0, canJump=false, isSprint=false, isCrouch=false;
@@ -111,7 +105,9 @@
         const WALK=5.0, SPRINT=8.0, CROUCH=3.0, JUMP=9, GRAVITY=24.0, P_W=0.9, P_H=1.8, EYE=1.6;
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
-        const const texUrls = [
+        
+        // --- НОВЫЙ СПИСОК БЛОКОВ ---
+        const texUrls = [
             './textures/grass.png',    // 0
             './textures/dirt.png',     // 1
             './textures/stone.png',    // 2
@@ -123,41 +119,34 @@
             './textures/sand.png',     // 8: Песок
             './textures/diamond.png'   // 9: Алмаз
         ];
+        
         let hotbar = [null,null,null,null,null], selSlot=0, holdBlock=null;
 
-        // --- INITIALIZATION FLOW ---
         if(MODE === 'multi') {
             onAuthStateChanged(auth, user => {
                 if(user) {
                     currentUser = user;
-                    // 1. СНАЧАЛА ПРОВЕРЯЕМ БАН (БЕЗ ЗАПУСКА ДВИЖКА)
                     get(ref(db, `lobbies/${LOBBY_ID}/banned/${currentUser.uid}`)).then(snap => {
                         if(snap.exists()) {
-                            // Если забанен - сразу показываем ошибку и стоп
                             showDisconnectScreen("Вы забанены", `Причина: ${snap.val().reason}`);
                         } else {
-                            // Если чист - проверяем античит и запускаем
                             checkAntiCheatAndStart();
                         }
-                    }).catch(err => {
-                        showDisconnectScreen("Ошибка сети", "Не удалось проверить статус");
-                    });
+                    }).catch(err => showDisconnectScreen("Ошибка", "Нет связи"));
                 } else { window.location.href = 'index.html'; }
             });
         } else {
-            // Одиночная игра
             hideLoadingScreen();
             startEngine();
             loadLocalWorld();
         }
 
-        // --- MULTIPLAYER LOGIC ---
         function checkAntiCheatAndStart() {
             const sRef = ref(db, `status/${currentUser.uid}`);
             get(sRef).then(snap => {
                 const s = snap.val();
                 if(s && s.state === 'online' && (Date.now() - s.last_seen < 15000)) {
-                    showDisconnectScreen("Ошибка входа", "Вы уже играете с другого устройства");
+                    showDisconnectScreen("Ошибка входа", "Двойной вход в аккаунт");
                 } else {
                     statusRef = sRef;
                     set(statusRef, {state: 'online', last_seen: Date.now()});
@@ -175,48 +164,34 @@
             document.getElementById('info-panel').innerText = `Сервер: ${LOBBY_ID}`;
             genTerrain();
 
-            // 1. Статус сервера
             onValue(ref(db, `lobbies/${LOBBY_ID}`), s => { 
                 if(!s.exists()) quit(true, "Сервер удален", "Хост удалил этот мир"); 
                 else if(s.val().status === 'offline' && !IS_HOST) quit(true, "Сервер остановлен", "Хост выключил сервер");
             });
 
-            // 2. Вход игрока
             playerRef = ref(db, `lobbies/${LOBBY_ID}/players/${currentUser.uid}`);
             onDisconnect(playerRef).remove();
             set(playerRef, { x:0, y:20, z:0, rotation:0, nick: currentUser.displayName });
 
-            // 3. СЛЕЖЕНИЕ ЗА КИКОМ/БАНОМ (Мгновенная реакция)
             onValue(playerRef, snap => {
-                // Слушаем даже если игра остановлена, чтобы отловить бан
-                if(!snap.exists() && isGameRunning) {
-                    // Нас удалили из players. Проверяем, почему.
-                    get(ref(db, `lobbies/${LOBBY_ID}/banned/${currentUser.uid}`)).then(bSnap => {
-                        if(bSnap.exists()) quit(true, "ВЫ ЗАБАНЕНЫ", `Причина: ${bSnap.val().reason}`);
-                        else quit(true, "ВАС КИКНУЛИ", "Вы были отключены от сервера");
-                    });
-                }
-                
-                // Проверка флагов (для надежности)
-                if(snap.exists()) {
-                    const val = snap.val();
-                    if(val._forceKick) quit(true, "ВАС КИКНУЛИ", "Администратор исключил вас");
-                    if(val._forceBan) {
+                if(isGameRunning && snap.exists()) {
+                    const data = snap.val();
+                    if (data._forceKick) quit(true, "ВАС КИКНУЛИ", "Вы были отключены от сервера");
+                    if (data._forceBan) {
                          get(ref(db, `lobbies/${LOBBY_ID}/banned/${currentUser.uid}`)).then(bSnap => {
                             const r = bSnap.exists() ? bSnap.val().reason : "Бан";
                             quit(true, "ВЫ ЗАБАНЕНЫ", `Причина: ${r}`);
                          });
                     }
                 }
+                if(isGameRunning && !snap.exists()) quit(true, "Отключено", "Потеряна связь с профилем");
             });
 
-            // Другие игроки
             const pRef = ref(db, `lobbies/${LOBBY_ID}/players`);
             onChildAdded(pRef, s => { if(s.key !== currentUser.uid) spawnPlayer(s.key, s.val()); });
             onChildChanged(pRef, s => { if(s.key !== currentUser.uid && otherPlayers[s.key]) movePlayer(s.key, s.val()); });
             onChildRemoved(pRef, s => { if(otherPlayers[s.key]) { scene.remove(otherPlayers[s.key].mesh); delete otherPlayers[s.key]; } });
 
-            // Мир
             const wRef = ref(db, `lobbies/${LOBBY_ID}/world`);
             const handleUpdate = (snap) => {
                 const [x,y,z] = snap.key.split('_').map(Number);
@@ -228,21 +203,15 @@
             onChildChanged(wRef, handleUpdate);
         }
 
-        // --- HELPERS ---
         function hideLoadingScreen() {
             document.getElementById('screen-error').style.display = 'none';
             document.getElementById('game-ui').style.display = 'block';
         }
 
         function showDisconnectScreen(title, msg) {
-            // Прячем всё игровое
             document.getElementById('game-ui').style.display = 'none';
             document.getElementById('pause-menu').style.display = 'none';
-            
-            // Если есть канвас three.js - скрываем
             if(renderer) renderer.domElement.style.display = 'none';
-
-            // Показываем ошибку
             const screen = document.getElementById('screen-error');
             document.getElementById('err-header').innerText = title;
             document.getElementById('err-msg').innerText = msg;
@@ -250,32 +219,18 @@
             screen.style.display = 'flex';
         }
 
-        // --- ВЫХОД ---
         window.quit = (forced, title, msg) => {
             isGameRunning = false; 
-            
-            // FIX: Проверяем, существуют ли контролы, прежде чем трогать
             if(controls) controls.unlock();
-            
             if(MODE === 'single' && !forced) saveLocalWorld();
-            
-            if(MODE === 'multi' && playerRef && !forced) {
-                // Если это не принудительный кик, удаляемся сами
-                remove(playerRef);
-            }
-            
+            if(MODE === 'multi' && playerRef && !forced) remove(playerRef);
             if(statusRef) set(statusRef, {state: 'offline'}); 
-
-            if(forced) {
-                showDisconnectScreen(title, msg);
-            } else {
-                window.location.href = 'index.html';
-            }
+            if(forced) showDisconnectScreen(title, msg);
+            else window.location.href = 'index.html';
         };
         
         window.resume = () => { if(controls) { document.getElementById('pause-menu').style.display='none'; controls.lock(); } };
 
-        // --- ДАЛЕЕ СТАНДАРТНЫЙ ДВИЖОК (БЕЗ ИЗМЕНЕНИЙ, КРОМЕ FIX Controls) ---
         function startEngine() { init3D(); isGameRunning = true; animate(); }
 
         function init3D() {
@@ -283,9 +238,7 @@
             camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.005, SETTINGS.dist * 2); camera.position.set(0, 15, 0);
             scene.add(new THREE.AmbientLight(0xcccccc)); 
             const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(10,20,10); scene.add(dl);
-            
-            controls = new PointerLockControls(camera, document.body); 
-            controls.pointerSpeed = SETTINGS.sens;
+            controls = new PointerLockControls(camera, document.body); controls.pointerSpeed = SETTINGS.sens;
             
             controls.addEventListener('lock', () => { 
                 isPaused=false; document.getElementById('pause-menu').style.display='none'; 
@@ -310,9 +263,6 @@
             document.body.appendChild(renderer.domElement);
             window.addEventListener('resize', () => { camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); });
         }
-
-        // ... (Функции генерации, физики и анимации остались без изменений, 
-        // но убедись, что animate проверяет isGameRunning в начале) ...
 
         function genTerrain() {
             const R = 12;
@@ -361,7 +311,6 @@
             }
         }
 
-        // ENTITIES
         function spawnPlayer(id, data) {
             const g = new THREE.BoxGeometry(0.6, 1.8, 0.6); const m = new THREE.MeshLambertMaterial({color:0xff0000});
             const mesh = new THREE.Mesh(g, m);
@@ -376,31 +325,6 @@
         }
         function movePlayer(id, data) {
             if(otherPlayers[id]) { otherPlayers[id].targetPos.set(data.x, data.y-0.9, data.z); otherPlayers[id].targetRot = data.rotation; }
-        }
-
-        // PHYSICS & CONTROLS (Standard)
-        function loadLocalWorld() {
-            document.getElementById('info-panel').innerText = `Мир: ${WORLD_NAME}`;
-            const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
-            const data = worlds[WORLD_NAME]?.blocks || {};
-            genTerrain();
-            if(Object.keys(data).length > 0) {
-                for(let k in data) { 
-                    const [x,y,z] = k.split(',').map(Number);
-                    const mat = data[k];
-                    if(hasBlock(x,y,z)) removeBlockLocal(objectsMap[`${x},${y},${z}`]);
-                    createBlock(x,y,z, materials[mat], false, false); 
-                }
-            }
-        }
-
-        function saveLocalWorld() {
-            if(MODE !== 'single') return;
-            const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
-            const b = {};
-            for(let k in worldData) { if(objectsMap[k]) b[k] = materials.indexOf(objectsMap[k].material); }
-            worlds[WORLD_NAME].blocks = b;
-            localStorage.setItem('mc_worlds', JSON.stringify(worlds));
         }
 
         function onKey(e) {
@@ -449,8 +373,18 @@
             camera.position.copy(pos);
             if(camera.position.y < -30) { camera.position.set(0,30,0); velocity.y=0; }
             for (let id in otherPlayers) { const p = otherPlayers[id]; p.mesh.position.lerp(p.targetPos, 0.3); p.mesh.rotation.y += (p.targetRot - p.mesh.rotation.y) * 0.3; }
+            
+            // UPDATE POSITION
             if(MODE === 'multi' && t - lastUploadTime > 150) { 
-                if(playerRef && isGameRunning) set(playerRef, {x:camera.position.x, y:camera.position.y, z:camera.position.z, rotation:camera.rotation.y, nick:currentUser.displayName}); 
+                if(playerRef && isGameRunning) {
+                    update(playerRef, {
+                        x:camera.position.x, 
+                        y:camera.position.y, 
+                        z:camera.position.z, 
+                        rotation:camera.rotation.y, 
+                        nick:currentUser.displayName
+                    }); 
+                }
                 lastUploadTime = t; 
             }
             prevTime = t; renderer.render(scene, camera);
