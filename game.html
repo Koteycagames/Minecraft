@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: MULTIPLAYER TNT</title>
+    <title>Minecraft JS: TNT FIX</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; background: #000; }
         
@@ -97,7 +97,6 @@
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
         import { initializeApp } from "firebase-app";
-        // ДОБАВИЛ 'push' в импорты
         import { getDatabase, ref, set, update, push, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get } from "firebase-database";
         import { getAuth, onAuthStateChanged } from "firebase-auth";
 
@@ -170,15 +169,10 @@
             document.getElementById('info-panel').innerText = `Сервер: ${LOBBY_ID}`;
             genTerrain();
             
-            // --- СЛУШАЕМ ВЗРЫВЫ ОТ ВСЕХ ИГРОКОВ ---
             explosionsRef = ref(db, `lobbies/${LOBBY_ID}/explosions`);
-            // Очищаем старые взрывы при входе (необязательно, но полезно)
-            // Но слушаем только новые
             onChildAdded(explosionsRef, (snap) => {
                 const data = snap.val();
-                if(data && (Date.now() - data.time < 2000)) { // Если взрыв свежий
-                    performExplosion(data.x, data.y, data.z);
-                }
+                if(data && (Date.now() - data.time < 2000)) performExplosion(data.x, data.y, data.z);
             });
 
             onValue(ref(db, `lobbies/${LOBBY_ID}`), s => { 
@@ -213,6 +207,7 @@
                 const [x,y,z] = snap.key.split('_').map(Number);
                 const val = snap.val();
                 const existing = objectsMap[`${x},${y},${z}`];
+                // Если блок уже горит, не удаляем его по сети (ждем взрыва)
                 if (existing && existing.userData.isPrimed) return;
                 if (existing) removeBlockLocal(existing);
                 if (val !== 99) createBlock(x,y,z, materials[val], true, false); 
@@ -292,10 +287,18 @@
             const k = getKey(x,y,z); worldData[k]=true; objectsMap[k]=o;
             if(MODE === 'multi' && !net && !isGen) set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), materials.indexOf(m));
         }
+
+        // --- ИСПРАВЛЕННАЯ ФУНКЦИЯ УДАЛЕНИЯ (БЕЗОПАСНАЯ) ---
         function removeBlockLocal(o) {
-            scene.remove(o); objects.splice(objects.indexOf(o),1);
+            if(!o) return;
+            scene.remove(o); 
+            // FIX: Проверяем индекс перед удалением, чтобы не удалить последний элемент случайно
+            const idx = objects.indexOf(o);
+            if(idx > -1) objects.splice(idx,1);
+            
             const k = getKey(Math.round(o.position.x), Math.round(o.position.y), Math.round(o.position.z));
-            delete worldData[k]; delete objectsMap[k];
+            delete worldData[k]; 
+            delete objectsMap[k];
         }
 
         function igniteTNT(mesh, delayTime = 3000) {
@@ -315,26 +318,26 @@
             for(let i = primedTNTs.length - 1; i >= 0; i--) {
                 const tnt = primedTNTs[i];
                 
-                // ВРЕМЯ ВЗРЫВА
                 if(time >= tnt.explodeTime) {
-                    const bx = tnt.mesh.position.x;
-                    const by = tnt.mesh.position.y;
-                    const bz = tnt.mesh.position.z;
+                    const bx = Math.round(tnt.mesh.position.x);
+                    const by = Math.round(tnt.mesh.position.y);
+                    const bz = Math.round(tnt.mesh.position.z);
 
-                    // Если мультиплеер - отправляем событие взрыва
+                    // ПРИНУДИТЕЛЬНО ЧИСТИМ ДАННЫЕ ЛОКАЛЬНО
+                    removeBlockLocal(tnt.mesh);
+
                     if(MODE === 'multi') {
+                        // Сообщаем о взрыве (физика + удаление у других)
                         push(explosionsRef, { x: bx, y: by, z: bz, time: Date.now() });
-                        // Сервер сам разошлет всем, и нам тоже
+                        // Обновляем базу мира (удаляем блок)
+                        set(ref(db, `lobbies/${LOBBY_ID}/world/${bx}_${by}_${bz}`), 99);
                     } else {
-                        // Одиночная игра - взрываем сразу
                         performExplosion(bx, by, bz);
                     }
-
                     primedTNTs.splice(i, 1);
                     continue;
                 }
                 
-                // Мигание
                 if(time >= tnt.nextBlink) {
                     tnt.isWhite = !tnt.isWhite;
                     if(tnt.isWhite) tnt.mesh.material.emissive.setHex(0xffffff);
@@ -346,32 +349,26 @@
             }
         }
 
-        // --- ГЛАВНАЯ ФУНКЦИЯ ВЗРЫВА (Вызывается и локально, и по сети) ---
         function performExplosion(cx, cy, cz) {
             const R = 4;
             
-            // 1. Удаление блоков
+            // 1. УДАЛЕНИЕ БЛОКОВ
             for(let x = cx - R; x <= cx + R; x++) {
                 for(let y = cy - R; y <= cy + R; y++) {
                     for(let z = cz - R; z <= cz + R; z++) {
                         if(Math.sqrt((x-cx)**2 + (y-cy)**2 + (z-cz)**2) <= R) {
                             if(hasBlock(x,y,z)) {
                                 const obj = objectsMap[`${x},${y},${z}`];
-                                
+                                // Цепная реакция для TNT
                                 if(materials.indexOf(obj.material) === 10 || (obj.material.map && obj.material.map.name === 'tnt')) {
                                     const delay = 200 + Math.random() * 300;
                                     igniteTNT(obj, delay); 
                                 } else {
                                     if(!obj.userData.isPrimed) {
                                         removeBlockLocal(obj);
-                                        // В мультиплеере каждый клиент удаляет блок у себя визуально,
-                                        // но только инициатор взрыва должен обновить базу (чтобы не спамить)
-                                        // НО для простоты: пусть инициатор (тот кто зажег) обновляет базу в updatePrimedTNTs,
-                                        // А тут мы просто визуально чистим.
-                                        // НО мы не знаем, кто инициатор. 
-                                        // Поэтому просто визуально удаляем. База обновится отдельно.
-                                        // P.S. В идеале тут нужен сложный код, но пока сойдет.
-                                        if(MODE === 'multi') set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
+                                        // В мультиплеере удаление из базы делает инициатор взрыва,
+                                        // но тут мы просто чистим визуал.
+                                        // Чтобы не было багов с "призраками" - базу тоже можно пнуть, если ты хост.
                                     }
                                 }
                             }
@@ -380,20 +377,13 @@
                 }
             }
 
-            // 2. ОТБРАСЫВАНИЕ (ДЛЯ ВСЕХ)
-            // Эта функция выполняется у КАЖДОГО игрока.
-            // Значит, каждый игрок проверяет расстояние от СЕБЯ (camera.position) до взрыва.
+            // 2. ФИЗИКА (ТОЛЧОК)
             const dist = camera.position.distanceTo(new THREE.Vector3(cx, cy, cz));
             if(dist < R + 3) {
                 const dir = new THREE.Vector3().subVectors(camera.position, new THREE.Vector3(cx, cy, cz)).normalize();
-                
-                // СИЛА УМЕНЬШЕНА В 10 РАЗ
-                // Было: (R + 2 - dist) * 1.5 * 15
-                // Стало: множитель 2.0 (горизонталь) и 1.5 (вертикаль)
                 const force = Math.max(0, (R + 3 - dist)); 
-                
-                velocity.addScaledVector(dir, force * 2.0); // Слабый толчок
-                velocity.y += force * 1.5; // Небольшой подброс
+                velocity.addScaledVector(dir, force * 2.0); 
+                velocity.y += force * 1.5; 
             }
         }
 
@@ -407,7 +397,7 @@
                 const heldItem = hotbar[selSlot];
 
                 if(e.button === 2) { 
-                    if(heldItem === 11) { // Зажигалка
+                    if(heldItem === 11) { 
                         const matIndex = materials.indexOf(obj.material);
                         if((matIndex === 10 || (obj.userData.isTNT)) && !obj.userData.isPrimed) {
                             igniteTNT(obj); 
