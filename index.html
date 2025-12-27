@@ -2,10 +2,9 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: Fixed Movement</title>
+    <title>Minecraft JS: FIXED PHYSICS</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
-        
         :root { --mc-btn-bg: #777; --mc-btn-border-light: #aaa; --mc-btn-border-dark: #555; }
         
         .menu-screen { 
@@ -45,6 +44,8 @@
             display: flex; justify-content: space-between; align-items: center;
         }
         .list-item:hover { background: rgba(255,255,255,0.1); }
+        
+        .status-active { color: #55ff55; font-size: 12px; margin-left: 10px; }
         .del-btn { background: #aa0000; padding: 2px 6px; cursor: pointer; border: 1px solid #fff; font-size: 12px; }
 
         #game-ui { display: none; } 
@@ -188,8 +189,32 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        // --- AUTH ---
+        // --- VARIABLES ---
         let isRegisterMode = false, currentUser = null, statusRef = null, heartbeatInterval = null;
+        let camera, scene, renderer, controls;
+        const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
+        let isMultiplayer = false, isHost = false, currentLobbyId = null, currentWorldName = null;
+        let isPaused = false, isGameRunning = false;
+        let playerRef, worldRef, lobbyRefCheck;
+        let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false, canJump=false, isSprinting=false, isCrouching=false;
+        const velocity = new THREE.Vector3();
+        let prevTime = performance.now(), lastUploadTime = 0;
+        let settings = { sensitivity: 0.5, renderDist: 60 };
+        let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
+        
+        // --- REALISTIC SPEED SETTINGS (NO MORE FLASH) ---
+        const WALK_SPEED = 5.0; // Было 30.0 (Слишком быстро)
+        const SPRINT_SPEED = 8.0; // Было 50.0
+        const CROUCH_SPEED = 3.0; // Было 10.0
+        const JUMP_FORCE = 9; 
+        const GRAVITY = 24.0;
+        
+        const PLAYER_WIDTH = 0.6; const PLAYER_HEIGHT = 1.8; const EYE_HEIGHT = 1.6;
+        const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+        let materials = [];
+        const textureUrls = ['./textures/grass.png', './textures/dirt.png', './textures/bricks.png', './textures/obsidian.png', './textures/iron.png'];
+
+        // --- AUTH ---
         window.toggleAuthMode = () => { isRegisterMode=!isRegisterMode; document.getElementById('auth-title').innerText=isRegisterMode?"РЕГИСТРАЦИЯ":"ВХОД"; document.getElementById('btn-auth-action').innerText=isRegisterMode?"СОЗДАТЬ АККАУНТ":"ВОЙТИ"; document.getElementById('auth-toggle').innerText=isRegisterMode?"Уже есть аккаунт? Войти":"Нет аккаунта? Зарегистрироваться"; document.getElementById('auth-nick').style.display=isRegisterMode?"block":"none"; };
         window.handleAuth = () => {
             const e=document.getElementById('auth-email').value, p=document.getElementById('auth-pass').value, n=document.getElementById('auth-nick').value, err=document.getElementById('auth-error');
@@ -216,24 +241,6 @@
             } else { currentUser=null; stopHeartbeat(); showScreen('screen-auth'); }
         });
         window.addEventListener("beforeunload", ()=>{ if(statusRef)set(statusRef,{state:'offline'}); });
-
-        // --- GLOBALS ---
-        let camera, scene, renderer, controls;
-        const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
-        let isMultiplayer = false, isHost = false, currentLobbyId = null, currentWorldName = null;
-        let isPaused = false, isGameRunning = false;
-        let playerRef, worldRef, lobbyRefCheck;
-        let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false, canJump=false, isSprinting=false, isCrouching=false;
-        const velocity = new THREE.Vector3();
-        let prevTime = performance.now(), lastUploadTime = 0;
-        let settings = { sensitivity: 0.5, renderDist: 60 };
-        let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
-        
-        const WALK_SPEED=30.0, SPRINT_SPEED=50.0, CROUCH_SPEED=10.0, JUMP_FORCE=9, GRAVITY=24.0;
-        const PLAYER_WIDTH = 0.6; const PLAYER_HEIGHT = 1.8; const EYE_HEIGHT = 1.6;
-        const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-        let materials = [];
-        const textureUrls = ['./textures/grass.png', './textures/dirt.png', './textures/bricks.png', './textures/obsidian.png', './textures/iron.png'];
 
         // --- MENUS ---
         window.showScreen = (screenId) => {
@@ -282,7 +289,8 @@
         function startEngine(){ document.querySelectorAll('.menu-screen').forEach(el=>el.style.display='none'); document.getElementById('game-ui').style.display='block'; init(); controls.pointerSpeed=settings.sensitivity; scene.fog.far=settings.renderDist; camera.far=settings.renderDist*2; isGameRunning=true; isPaused=false; animate(); setTimeout(()=>{alert("Кликни чтобы играть");},100); }
         window.resumeGame=()=>{document.getElementById('pause-menu').style.display='none';controls.lock();};
         window.quitToTitle=(f=false,m="")=>{ if(lobbyRefCheck)lobbyRefCheck(); if(isMultiplayer&&!f)remove(playerRef); if(!isMultiplayer&&currentWorldName&&!f){const w=getLocalWorlds();const b={};for(let k in worldData){if(objectsMap[k])b[k]=materials.indexOf(objectsMap[k].material);}w[currentWorldName].blocks=b;saveLocalWorlds(w);} if(f)alert(m); location.reload(); };
-        function generateBasicTerrain(){ const R=12; for(let y=-5; y<0; y++)for(let x=-R; x<R; x++)for(let z=-R; z<R; z++)createBlock(x,y,z,materials[1]); for(let x=-R; x<R; x++)for(let z=-R; z<R; z++)createBlock(x,0,z,materials[0]); }
+        // INCREASED GENERATION DEPTH to avoid falling through
+        function generateBasicTerrain(){ const R=12; for(let y=-20; y<0; y++)for(let x=-R; x<R; x++)for(let z=-R; z<R; z++)createBlock(x,y,z,materials[1]); for(let x=-R; x<R; x++)for(let z=-R; z<R; z++)createBlock(x,0,z,materials[0]); }
 
         function init(){
             scene=new THREE.Scene();scene.background=new THREE.Color(0x87CEEB);scene.fog=new THREE.Fog(0x87CEEB,10,60);
@@ -329,7 +337,7 @@
         function updateOtherPlayer(id,data){const p=otherPlayers[id];p.mesh.position.set(data.x,data.y-0.9,data.z);p.mesh.rotation.y=data.rotation;}
         function uploadPos(){if(isMultiplayer&&playerRef)set(playerRef,{x:camera.position.x,y:camera.position.y,z:camera.position.z,rotation:camera.rotation.y,nick:currentUser.displayName});}
 
-        // --- SOLID PHYSICS & FIX MOVEMENT ---
+        // --- PHYSICS (SOLID + CORRECT CAMERA MOVEMENT) ---
         function resolveCollision(newPos) {
             const radius = PLAYER_WIDTH / 2;
             let minX = newPos.x - radius; let maxX = newPos.x + radius;
@@ -364,31 +372,25 @@
                 // Gravity
                 velocity.y -= GRAVITY * d;
 
-                // FIX: Camera-Relative Movement
+                // MOVEMENT FIXED: Relative to Camera
                 if((isMultiplayer&&controls.isLocked&&!isInventoryOpen)||(!isMultiplayer&&sim)) {
-                    // 1. Get Input
-                    const forwardInput = Number(moveForward) - Number(moveBackward);
-                    const rightInput = Number(moveRight) - Number(moveLeft);
+                    const fwd = Number(moveForward) - Number(moveBackward);
+                    const right = Number(moveRight) - Number(moveLeft);
 
-                    if (forwardInput !== 0 || rightInput !== 0) {
-                        // 2. Get Camera Direction (Horizontal)
+                    if (fwd !== 0 || right !== 0) {
                         const front = new THREE.Vector3();
                         camera.getWorldDirection(front);
                         front.y = 0; front.normalize();
+                        const side = new THREE.Vector3();
+                        side.crossVectors(camera.up, front).normalize();
 
-                        const right = new THREE.Vector3();
-                        right.crossVectors(camera.up, front).normalize(); // Correct Right vector
-
-                        // 3. Combine
                         const moveDir = new THREE.Vector3();
-                        moveDir.addScaledVector(front, forwardInput);
-                        moveDir.addScaledVector(right, rightInput); // A/D uses Right vector
+                        moveDir.addScaledVector(front, fwd);
+                        moveDir.addScaledVector(side, right);
                         moveDir.normalize();
 
                         let spd=isCrouching?CROUCH_SPEED:(isSprinting?SPRINT_SPEED:WALK_SPEED);
-                        
-                        // Apply to velocity
-                        velocity.x += moveDir.x * spd * d * 10; // Acceleration factor
+                        velocity.x += moveDir.x * spd * d * 10;
                         velocity.z += moveDir.z * spd * d * 10;
                     }
                 }
@@ -400,15 +402,12 @@
                 // Physics Steps
                 const pos = camera.position.clone();
                 
-                // X
                 pos.x += velocity.x * d;
                 if (resolveCollision(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
                 
-                // Z
                 pos.z += velocity.z * d;
                 if (resolveCollision(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
                 
-                // Y
                 pos.y += velocity.y * d;
                 if (resolveCollision(pos)) {
                     const wasFalling = velocity.y < 0;
