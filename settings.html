@@ -25,25 +25,22 @@
     <button class="mc-btn" onclick="save()">ГОТОВО</button>
 
     <script>
-        // Загрузка
         const conf = JSON.parse(localStorage.getItem('mc_settings') || '{"sens":0.5, "dist":60}');
         document.getElementById('sens').value = conf.sens;
         document.getElementById('dist').value = conf.dist;
         document.getElementById('sens-val').innerText = conf.sens;
         document.getElementById('dist-val').innerText = conf.dist;
 
-        // Обновление цифр
         document.getElementById('sens').oninput = (e) => document.getElementById('sens-val').innerText = e.target.value;
         document.getElementById('dist').oninput = (e) => document.getElementById('dist-val').innerText = e.target.value;
 
-        // Сохранение и выход
         function save() {
             const newConf = {
                 sens: parseFloat(document.getElementById('sens').value),
                 dist: parseInt(document.getElementById('dist').value)
             };
             localStorage.setItem('mc_settings', JSON.stringify(newConf));
-            window.location.href = 'main.html';
+            window.location.href = 'index.html'; // Исправлено на index.html
         }
     </script>
 </body>
