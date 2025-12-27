@@ -6,38 +6,49 @@
     <style>
         body { margin: 0; font-family: 'Courier New', monospace; background: url('./textures/dirt.png'); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: white; }
         body::before { content: ""; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); z-index: -1; }
-        .list { width: 600px; height: 300px; background: rgba(0,0,0,0.5); border: 2px solid #555; overflow-y: auto; margin-bottom: 20px; }
+        
+        .list { width: 650px; height: 350px; background: rgba(0,0,0,0.5); border: 2px solid #555; overflow-y: auto; margin-bottom: 20px; }
         .item { padding: 10px; border-bottom: 1px solid #333; display: flex; flex-direction: column; gap: 5px; background: rgba(0,0,0,0.3); margin: 5px; }
+        
         .row { display: flex; justify-content: space-between; align-items: center; }
-        .controls { display: flex; gap: 5px; margin-top: 5px; }
-        .mc-btn { padding: 10px; font-size: 16px; color: #ddd; background: #777; border: 2px solid #555; cursor: pointer; flex: 1; }
+        .controls { display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+        
+        .mc-btn { padding: 8px; font-size: 14px; color: #ddd; background: #777; border: 2px solid #555; cursor: pointer; flex: 1; min-width: 80px; }
         .mc-btn:hover { background: #999; color: #fff; }
+        
         .btn-red { background: #800; border-color: #a00; }
         .btn-red:hover { background: #a00; }
-        .input-code { width: 380px; padding: 10px; margin: 10px 0; background: black; color: white; border: 2px solid #555; }
         
+        /* Модальное окно */
         #player-modal { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
-        .p-list { width: 400px; max-height: 300px; overflow-y: auto; border: 1px solid #fff; margin: 10px; }
-        .p-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #555; }
+        .p-list { width: 500px; max-height: 400px; overflow-y: auto; border: 1px solid #fff; margin: 10px; background: #222; }
+        
+        /* Элемент списка игроков/банов */
+        .p-item { padding: 10px; border-bottom: 1px solid #555; display: flex; justify-content: space-between; align-items: center; }
         .p-item:hover { background: #333; }
+        .p-info { display: flex; flex-direction: column; }
+        .p-reason { font-size: 12px; color: #aaa; }
+        .btn-small { width: auto; padding: 5px 10px; font-size: 12px; flex: 0; margin-left: 10px; }
+
+        .input-code { width: 380px; padding: 10px; margin: 10px 0; background: black; color: white; border: 2px solid #555; }
     </style>
 </head>
 <body>
     <h1>СЕТЕВАЯ ИГРА</h1>
     
-    <div style="text-align:left; width: 600px; color: #aaa;">Мои сервера (Панель управления):</div>
+    <div style="text-align:left; width: 650px; color: #aaa;">Мои сервера:</div>
     <div class="list" id="server-list">Загрузка...</div>
 
-    <button class="mc-btn" style="width:400px" onclick="createLobby()">СОЗДАТЬ СЕРВЕР</button>
+    <button class="mc-btn" style="width:400px; padding:15px; font-size:18px;" onclick="createLobby()">СОЗДАТЬ СЕРВЕР</button>
     <hr style="width: 400px; border-color: #555;">
     <input type="text" id="join-code" class="input-code" placeholder="Код приглашения">
-    <button class="mc-btn" style="width:400px" onclick="joinLobby()">ПОДКЛЮЧИТЬСЯ</button>
-    <button class="mc-btn" style="width:400px" onclick="window.location.href='index.html'">НАЗАД</button>
+    <button class="mc-btn" style="width:400px; padding:15px; font-size:18px;" onclick="joinLobby()">ПОДКЛЮЧИТЬСЯ</button>
+    <button class="mc-btn" style="width:400px; padding:15px; font-size:18px;" onclick="window.location.href='index.html'">НАЗАД</button>
 
     <div id="player-modal">
-        <h2 id="modal-title">ВЫБЕРИ ИГРОКА</h2>
+        <h2 id="modal-title">СПИСОК</h2>
         <div class="p-list" id="modal-list"></div>
-        <button class="mc-btn" style="width:200px" onclick="closeModal()">ОТМЕНА</button>
+        <button class="mc-btn" style="width:200px" onclick="closeModal()">ЗАКРЫТЬ</button>
     </div>
 
     <script type="module">
@@ -76,12 +87,13 @@
                             <span style="font-weight:bold; color:${isOffline ? '#f55' : '#5f5'}">
                                 Лобби: ${code} [${isOffline ? 'OFFLINE' : 'ONLINE'}]
                             </span>
-                            <span style="font-size:12px; color:#aaa">Игроков: ${data.players ? Object.keys(data.players).length : 0}</span>
+                            <span style="font-size:12px; color:#aaa">Онлайн: ${data.players ? Object.keys(data.players).length : 0}</span>
                         </div>
                         <div class="controls">
                             <button class="mc-btn" onclick="toggleStatus('${code}', '${data.status}')">${isOffline ? 'ЗАПУСТИТЬ' : 'ОСТАНОВИТЬ'}</button>
                             <button class="mc-btn" onclick="openPlayerMenu('${code}', 'kick')">КИКНУТЬ</button>
                             <button class="mc-btn" onclick="openPlayerMenu('${code}', 'ban')">ЗАБАНИТЬ</button>
+                            <button class="mc-btn" onclick="openBanList('${code}')" style="background:#553; border-color:#885">БАН-ЛИСТ</button>
                             <button class="mc-btn btn-red" onclick="deleteServer('${code}')">УДАЛИТЬ</button>
                         </div>
                     `;
@@ -96,19 +108,17 @@
         };
 
         window.deleteServer = (code) => {
-            if(confirm(`УДАЛИТЬ сервер ${code} НАВСЕГДА? Все данные будут стерты.`)) {
-                remove(ref(db, `lobbies/${code}`));
-            }
+            if(confirm(`УДАЛИТЬ сервер ${code}?`)) remove(ref(db, `lobbies/${code}`));
         };
 
+        // --- УПРАВЛЕНИЕ ИГРОКАМИ (KICK / BAN) ---
         window.openPlayerMenu = (code, action) => {
             const modal = document.getElementById('player-modal');
             const list = document.getElementById('modal-list');
-            const title = document.getElementById('modal-title');
+            document.getElementById('modal-title').innerText = action === 'kick' ? "ВЫБЕРИТЕ КОГО КИКНУТЬ" : "ВЫБЕРИТЕ КОГО ЗАБАНИТЬ";
             
             list.innerHTML = 'Загрузка...';
             modal.style.display = 'flex';
-            title.innerText = action === 'kick' ? "КОГО КИКНУТЬ?" : "КОГО ЗАБАНИТЬ?";
 
             get(ref(db, `lobbies/${code}/players`)).then(snap => {
                 list.innerHTML = '';
@@ -121,7 +131,8 @@
 
                     const item = document.createElement('div');
                     item.className = 'p-item';
-                    item.innerText = nick;
+                    // Для списка онлайн игроков просто имя и действие по клику
+                    item.innerHTML = `<span style="font-weight:bold">${nick}</span>`;
                     item.onclick = () => {
                         if(action === 'kick') kickPlayer(code, uid, nick);
                         if(action === 'ban') banPlayer(code, uid, nick);
@@ -132,32 +143,68 @@
             });
         };
 
+        // --- СПИСОК БАНОВ (UNBAN) ---
+        window.openBanList = (code) => {
+            const modal = document.getElementById('player-modal');
+            const list = document.getElementById('modal-list');
+            document.getElementById('modal-title').innerText = `ЗАБАНЕННЫЕ (${code})`;
+            
+            list.innerHTML = 'Загрузка...';
+            modal.style.display = 'flex';
+
+            get(ref(db, `lobbies/${code}/banned`)).then(snap => {
+                list.innerHTML = '';
+                if(!snap.exists()) { list.innerHTML = '<div style="padding:10px">Список пуст</div>'; return; }
+
+                snap.forEach(b => {
+                    const uid = b.key;
+                    const data = b.val();
+                    
+                    const item = document.createElement('div');
+                    item.className = 'p-item';
+                    item.innerHTML = `
+                        <div class="p-info">
+                            <span style="font-weight:bold; color:#f55">${data.nick}</span>
+                            <span class="p-reason">Причина: ${data.reason}</span>
+                        </div>
+                        <button class="mc-btn btn-small btn-green" onclick="unbanPlayer('${code}', '${uid}', '${data.nick}')">РАЗБАНИТЬ</button>
+                    `;
+                    // preventDefault не нужен, так как кнопка внутри дива
+                    // но клик по диву не должен срабатывать, так что onclick на кнопке
+                    list.appendChild(item);
+                });
+            });
+        }
+
+        window.unbanPlayer = (code, uid, nick) => {
+            if(confirm(`Разбанить игрока ${nick}?`)) {
+                remove(ref(db, `lobbies/${code}/banned/${uid}`))
+                    .then(() => {
+                        // Обновляем список, не закрывая окно
+                        openBanList(code);
+                    });
+            }
+        };
+
         window.closeModal = () => document.getElementById('player-modal').style.display = 'none';
 
-        // --- ИСПРАВЛЕННАЯ ЛОГИКА ---
         function kickPlayer(code, uid, nick) {
-            if(confirm(`Кикнуть ${nick}?`)) {
-                // Не удаляем сразу, а ставим метку _forceKick
-                update(ref(db, `lobbies/${code}/players/${uid}`), { _forceKick: true });
-            }
+            if(confirm(`Кикнуть ${nick}?`)) update(ref(db, `lobbies/${code}/players/${uid}`), { _forceKick: true });
         }
 
         function banPlayer(code, uid, nick) {
             const reason = prompt(`Причина бана для ${nick}:`, "Нарушение правил");
             if(reason) {
-                // Сначала добавляем в список забаненных
                 set(ref(db, `lobbies/${code}/banned/${uid}`), {
                     nick: nick,
                     reason: reason,
                     timestamp: Date.now()
                 }).then(() => {
-                    // Потом ставим метку _forceBan
                     update(ref(db, `lobbies/${code}/players/${uid}`), { _forceBan: true });
                 });
-                alert(`${nick} был забанен.`);
+                alert(`${nick} забанен.`);
             }
         }
-        // -----------------------------
 
         window.createLobby = () => {
             const code = Math.floor(1000 + Math.random() * 9000).toString();
@@ -177,7 +224,7 @@
                 if(snap.exists()) {
                     const data = snap.val();
                     if(data.status === 'offline' && data.ownerId !== currentUser.uid) {
-                        return alert("Сервер выключен хостом (Оффлайн).");
+                        return alert("Сервер выключен хостом.");
                     }
                     const isHost = (data.ownerId === currentUser.uid);
                     enterGame(code, isHost);
