@@ -2,46 +2,34 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: FULL GAME</title>
+    <title>Minecraft JS: Game</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; background: #000; }
-        
         #game-ui { display: none; }
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); z-index: 10; pointer-events: none; }
-        
-        /* ХОТБАР (9 слотов) */
         #hotbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; background: rgba(0,0,0,0.5); padding: 5px; border-radius: 5px; z-index: 150; }
         .slot { width: 50px; height: 50px; border: 3px solid #555; background-color: rgba(0,0,0,0.4); background-size: cover; cursor: pointer; }
         .slot.active { border-color: white; transform: scale(1.1); background-color: rgba(255,255,255,0.1); }
-        
-        /* СТАТИСТИКА (Сердца и Еда) */
         #stats-bar { position: absolute; bottom: 85px; left: 50%; transform: translateX(-50%); width: 500px; display: flex; justify-content: space-between; z-index: 140; }
         .stat-row { display: flex; gap: 4px; }
         .heart, .food { width: 20px; height: 20px; display: inline-block; border: 1px solid #000; }
         .heart { background: red; box-shadow: inset 2px 2px #ff6666; }
         .food { background: orange; box-shadow: inset 2px 2px #ffcc66; }
         .empty { background: rgba(0,0,0,0.5); box-shadow: none; border: 1px solid #444; }
-
-        /* ЧАТ */
         #chat-container { position: absolute; bottom: 120px; left: 10px; width: 400px; height: 300px; display: flex; flex-direction: column; justify-content: flex-end; z-index: 200; pointer-events: none; }
-        #chat-log { max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; text-shadow: 1px 1px #000; color: white; font-size: 16px; margin-bottom: 5px; padding-right: 5px; }
-        /* Скрываем скроллбар */
+        #chat-log { max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; text-shadow: 1px 1px #000; color: white; font-size: 16px; margin-bottom: 5px; }
         #chat-log::-webkit-scrollbar { width: 0; }
         .chat-msg { background: rgba(0,0,0,0.5); padding: 4px 8px; border-radius: 4px; align-self: flex-start; }
         .sys-msg { color: #ffff55; }
         #chat-input-line { display: none; pointer-events: auto; }
         #chat-input { width: 100%; background: rgba(0,0,0,0.7); border: 2px solid #aaa; color: white; padding: 10px; font-family: inherit; font-size: 16px; outline: none; }
-
         #info-panel { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.5); padding: 10px; pointer-events: none; font-weight: bold; }
-        
         .overlay-menu { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
         .mc-btn { width: 300px; padding: 15px; margin: 10px; font-size: 20px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; text-shadow: 2px 2px #000; }
         .mc-btn:hover { background: #888; color: white; border-color: #777; }
-        
         .inv-grid { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 500px; }
         .inv-slot { width: 50px; height: 50px; border: 2px solid #888; background: #8b8b8b; cursor: pointer; background-size: cover; }
         #cursor-item { position: absolute; width: 40px; height: 40px; pointer-events: none; z-index: 200; background-size: cover; display: none; border: 2px solid yellow; }
-
         #screen-error { display: flex; position: absolute; top:0; left:0; width:100%; height:100%; background: url('./textures/dirt.png'); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
         #screen-error::before { content: ""; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.75); z-index: -1; }
         .err-title { font-size: 26px; color: #ffffff; margin-bottom: 20px; font-weight: bold; }
@@ -54,33 +42,23 @@
     <div id="game-ui">
         <div id="crosshair"></div>
         <div id="info-panel">Загрузка...</div>
-        
         <div id="chat-container">
             <div id="chat-log"></div>
-            <div id="chat-input-line">
-                <input type="text" id="chat-input" placeholder="Чат (Enter чтобы отправить)" autocomplete="off">
-            </div>
+            <div id="chat-input-line"><input type="text" id="chat-input" placeholder="Чат..." autocomplete="off"></div>
         </div>
-
-        <div id="stats-bar">
-            <div class="stat-row" id="hearts-row"></div>
-            <div class="stat-row" id="food-row"></div>
-        </div>
-
+        <div id="stats-bar"><div class="stat-row" id="hearts-row"></div><div class="stat-row" id="food-row"></div></div>
         <div id="hotbar">
-            <div class="slot active" id="slot-0"></div><div class="slot" id="slot-1"></div>
-            <div class="slot" id="slot-2"></div><div class="slot" id="slot-3"></div>
-            <div class="slot" id="slot-4"></div><div class="slot" id="slot-5"></div>
-            <div class="slot" id="slot-6"></div><div class="slot" id="slot-7"></div>
-            <div class="slot" id="slot-8"></div>
+            <div class="slot active" id="slot-0"></div><div class="slot" id="slot-1"></div><div class="slot" id="slot-2"></div>
+            <div class="slot" id="slot-3"></div><div class="slot" id="slot-4"></div><div class="slot" id="slot-5"></div>
+            <div class="slot" id="slot-6"></div><div class="slot" id="slot-7"></div><div class="slot" id="slot-8"></div>
         </div>
     </div>
 
     <div id="pause-menu" class="overlay-menu">
         <h1 style="color:white; font-size:40px;">ПАУЗА</h1>
         <button class="mc-btn" onclick="resume()">ВЕРНУТЬСЯ</button>
-        <button class="mc-btn" id="btn-gamemode" onclick="toggleGamemode()" style="display:none">СМЕНИТЬ РЕЖИМ</button>
-        <button class="mc-btn" onclick="quit(false)">ВЫЙТИ В МЕНЮ</button>
+        <button class="mc-btn" id="btn-gamemode" onclick="toggleGamemode()" style="display:none">РЕЖИМ</button>
+        <button class="mc-btn" onclick="quit(false)">ВЫЙТИ</button>
     </div>
 
     <div id="inventory-screen" class="overlay-menu">
@@ -92,7 +70,7 @@
 
     <div id="screen-error">
         <div class="err-title" id="err-header">ЗАГРУЗКА...</div>
-        <div class="err-desc" id="err-msg">Подключение к миру</div>
+        <div class="err-desc" id="err-msg">Инициализация</div>
         <button id="btn-menu" class="mc-btn" onclick="location.href='index.html'">В МЕНЮ</button>
     </div>
 
@@ -115,7 +93,10 @@
         import { getDatabase, ref, set, update, push, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get } from "firebase-database";
         import { getAuth, onAuthStateChanged } from "firebase-auth";
 
+        // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ (ЧТОБЫ НЕ БЫЛО ОШИБОК)
         const LOBBY_ID = localStorage.getItem('mc_lobby_id');
+        const MODE = localStorage.getItem('mc_mode'); 
+        const WORLD_NAME = localStorage.getItem('mc_current_world');
         const IS_HOST = (localStorage.getItem('mc_is_host') === 'true');
         const SETTINGS = JSON.parse(localStorage.getItem('mc_settings') || '{"sens":0.5, "dist":60}');
         
@@ -131,84 +112,96 @@
         const velocity = new THREE.Vector3();
         let prevTime = performance.now(), lastUploadTime = 0;
         
-        // --- ПАРАМЕТРЫ ИГРЫ ---
         let WORLD_SIZE = 30; 
         let GAME_MODE = 'survival';
-        
-        let isFlying = false;
-        let lastSpacePress = 0;
-        let health = 10;
-        let hunger = 10.0;
-        let hungerTimer = 0;
+        let isFlying = false, lastSpacePress = 0;
+        let health = 10, hunger = 10.0, hungerTimer = 0;
 
         const WALK=5.0, SPRINT=8.0, CROUCH=3.0, JUMP=9, FLY_SPEED=15.0, GRAVITY=24.0, P_W=0.5, P_H=1.8, EYE=1.6;
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
         const texUrls = ['./textures/grass.png','./textures/dirt.png','./textures/stone.png','./textures/obsidian.png','./textures/iron.png','./textures/log.png','./textures/planks.png','./textures/brick.png','./textures/sand.png','./textures/diamond.png','./textures/tnt.png','./textures/flint.png'];
         let hotbar = [null,null,null,null,null,null,null,null,null], selSlot=0, holdBlock=null;
-        const primedTNTs = []; // Список горящих ТНТ
+        const primedTNTs = [];
 
-        // 1. АВТОРИЗАЦИЯ
-        onAuthStateChanged(auth, user => {
-            if(user) {
-                currentUser = user;
-                // Проверка бана
-                get(ref(db, `lobbies/${LOBBY_ID}/banned/${currentUser.uid}`)).then(snap => {
-                    if(snap.exists()) showDisconnectScreen("Вы забанены", `Причина: ${snap.val().reason}`);
-                    else checkAntiCheatAndStart();
-                }).catch(() => showDisconnectScreen("Ошибка", "Нет связи"));
-            } else window.location.href = 'index.html';
-        });
+        // --- ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ КНОПОК HTML ---
+        window.resume = () => { 
+            if(controls) { document.getElementById('pause-menu').style.display='none'; controls.lock(); } 
+        };
+        
+        window.quit = (forced, title, msg) => {
+            isGameRunning = false; 
+            if(controls) controls.unlock();
+            if(MODE === 'single' && !forced) saveLocalWorld();
+            if(MODE === 'multi' && playerRef && !forced) remove(playerRef);
+            if(statusRef) set(statusRef, {state: 'offline'}); 
+            if(forced) showDisconnectScreen(title, msg);
+            else window.location.href = 'index.html';
+        };
 
-        // 2. ЗАГРУЗКА ПАРАМЕТРОВ
+        window.toggleGamemode = () => {
+            if(!IS_HOST) return;
+            const newMode = GAME_MODE === 'survival' ? 'creative' : 'survival';
+            update(ref(db, `lobbies/${LOBBY_ID}`), { mode: newMode });
+        };
+
+        // --- ЗАПУСК ---
+        if(MODE === 'multi') {
+            onAuthStateChanged(auth, user => {
+                if(user) {
+                    currentUser = user;
+                    get(ref(db, `lobbies/${LOBBY_ID}/banned/${currentUser.uid}`)).then(snap => {
+                        if(snap.exists()) showDisconnectScreen("Вы забанены", `Причина: ${snap.val().reason}`);
+                        else checkAntiCheatAndStart();
+                    }).catch(() => showDisconnectScreen("Ошибка", "Нет связи"));
+                } else window.location.href = 'index.html';
+            });
+        } else {
+            hideLoadingScreen();
+            startEngine();
+            loadLocalWorld();
+        }
+
         function checkAntiCheatAndStart() {
             const sRef = ref(db, `status/${currentUser.uid}`);
             get(sRef).then(snap => {
                 const s = snap.val();
-                if(s && s.state === 'online' && (Date.now() - s.last_seen < 15000)) {
-                    showDisconnectScreen("Ошибка", "Аккаунт уже в игре");
-                } else {
-                    statusRef = sRef;
-                    set(statusRef, {state: 'online', last_seen: Date.now()});
-                    onDisconnect(statusRef).set({state: 'offline'});
-                    setInterval(() => set(ref(db, `status/${currentUser.uid}/last_seen`), Date.now()), 5000);
-                    
-                    // ГЛАВНОЕ: Читаем настройки мира из базы
-                    get(ref(db, `lobbies/${LOBBY_ID}`)).then(lsnap => {
-                        if(lsnap.exists()) {
-                            const ldata = lsnap.val();
-                            WORLD_SIZE = ldata.size || 30; // 10, 30 или 50
-                            GAME_MODE = ldata.mode || 'survival';
-                            
-                            hideLoadingScreen();
-                            startEngine();
-                            connectToLobby();
-                            updateStatsUI();
-                            if(IS_HOST) document.getElementById('btn-gamemode').style.display = 'block';
-                        } else quit(true, "Ошибка", "Лобби не найдено");
-                    });
-                }
+                // Для тестов отключаем строгую проверку мультисессии (можно раскомментировать)
+                // if(s && s.state === 'online' && (Date.now() - s.last_seen < 15000)) ...
+                statusRef = sRef;
+                set(statusRef, {state: 'online', last_seen: Date.now()});
+                onDisconnect(statusRef).set({state: 'offline'});
+                setInterval(() => set(ref(db, `status/${currentUser.uid}/last_seen`), Date.now()), 5000);
+                
+                get(ref(db, `lobbies/${LOBBY_ID}`)).then(lsnap => {
+                    if(lsnap.exists()) {
+                        const ldata = lsnap.val();
+                        WORLD_SIZE = ldata.size || 30;
+                        GAME_MODE = ldata.mode || 'survival';
+                        hideLoadingScreen();
+                        startEngine();
+                        connectToLobby();
+                        updateStatsUI();
+                        if(IS_HOST) document.getElementById('btn-gamemode').style.display = 'block';
+                    } else quit(true, "Ошибка", "Лобби не найдено");
+                });
             });
         }
 
-        // 3. ПОДКЛЮЧЕНИЕ
         function connectToLobby() {
             document.getElementById('info-panel').innerText = `Сервер: ${LOBBY_ID} | ${GAME_MODE.toUpperCase()}`;
-            genTerrain(); // Генерируем мир нужного размера
+            genTerrain();
             
-            // ЧАТ
             chatRef = ref(db, `lobbies/${LOBBY_ID}/chat`);
             onChildAdded(chatRef, snap => addChatMsg(snap.val()));
             push(chatRef, { user: "System", msg: `${currentUser.displayName} присоединился`, type: 'sys' });
             
-            // ВЗРЫВЫ
             explosionsRef = ref(db, `lobbies/${LOBBY_ID}/explosions`);
             onChildAdded(explosionsRef, (snap) => {
                 const data = snap.val();
                 if(data && (Date.now() - data.time < 2000)) performExplosion(data.x, data.y, data.z);
             });
 
-            // РЕЖИМ ИГРЫ (Синхронизация)
             onValue(ref(db, `lobbies/${LOBBY_ID}/mode`), snap => {
                 if(snap.exists()) {
                     GAME_MODE = snap.val();
@@ -218,36 +211,30 @@
                 }
             });
 
-            // ИГРОК
             playerRef = ref(db, `lobbies/${LOBBY_ID}/players/${currentUser.uid}`);
             onDisconnect(playerRef).remove();
             set(playerRef, { x:0, y:30, z:0, rotation:0, nick: currentUser.displayName });
 
-            // ОСТАЛЬНЫЕ
+            onValue(playerRef, snap => { if(isGameRunning && snap.exists() && (snap.val()._forceKick || snap.val()._forceBan)) quit(true, "Отключен", "Вас исключили"); });
             const pRef = ref(db, `lobbies/${LOBBY_ID}/players`);
             onChildAdded(pRef, s => { if(s.key !== currentUser.uid) spawnPlayer(s.key, s.val()); });
             onChildChanged(pRef, s => { if(s.key !== currentUser.uid && otherPlayers[s.key]) movePlayer(s.key, s.val()); });
             onChildRemoved(pRef, s => { if(otherPlayers[s.key]) { scene.remove(otherPlayers[s.key].mesh); delete otherPlayers[s.key]; } });
             
-            // МИР
             const wRef = ref(db, `lobbies/${LOBBY_ID}/world`);
-            onChildAdded(wRef, handleWorldUpdate);
-            onChildChanged(wRef, handleWorldUpdate);
-            
-            // СЛЕЖКА ЗА КИКОМ
-            onValue(playerRef, snap => { if(isGameRunning && snap.exists() && (snap.val()._forceKick || snap.val()._forceBan)) quit(true, "Отключен", "Вас исключили"); });
+            const handleUpdate = (snap) => {
+                const [x,y,z] = snap.key.split('_').map(Number);
+                const val = snap.val();
+                const existing = objectsMap[`${x},${y},${z}`];
+                if (existing && existing.userData.isPrimed) return;
+                if (existing) removeBlockLocal(existing);
+                if (val !== 99) createBlock(x,y,z, materials[val], true, false); 
+            };
+            onChildAdded(wRef, handleUpdate);
+            onChildChanged(wRef, handleUpdate);
         }
 
-        const handleWorldUpdate = (snap) => {
-            const [x,y,z] = snap.key.split('_').map(Number);
-            const val = snap.val();
-            const existing = objectsMap[`${x},${y},${z}`];
-            if (existing && existing.userData.isPrimed) return; // Не трогаем горящий ТНТ
-            if (existing) removeBlockLocal(existing);
-            if (val !== 99) createBlock(x,y,z, materials[val], true, false); 
-        };
-
-        // --- ЧАТ ---
+        // --- ФУНКЦИОНАЛ ---
         function addChatMsg(data) {
             const log = document.getElementById('chat-log');
             const div = document.createElement('div');
@@ -274,7 +261,6 @@
             }
         }
 
-        // --- СТАТИСТИКА (ВЫЖИВАНИЕ) ---
         function updateStatsUI() {
             const hRow = document.getElementById('hearts-row');
             const fRow = document.getElementById('food-row');
@@ -284,35 +270,24 @@
                 hRow.innerHTML = '<span style="color:yellow; font-weight:bold;">CREATIVE</span>';
                 return;
             }
-
             for(let i=0; i<10; i++) {
-                const h = document.createElement('div'); h.className = i < health ? 'heart' : 'heart empty';
-                hRow.appendChild(h);
-                const f = document.createElement('div'); f.className = i < Math.ceil(hunger) ? 'food' : 'food empty';
-                fRow.appendChild(f);
+                const h = document.createElement('div'); h.className = i < health ? 'heart' : 'heart empty'; hRow.appendChild(h);
+                const f = document.createElement('div'); f.className = i < Math.ceil(hunger) ? 'food' : 'food empty'; fRow.appendChild(f);
             }
         }
 
         function handleSurvivalStats(delta, isMoving, isSprinting) {
             if(GAME_MODE === 'creative') return;
-
-            let drain = 0.005; 
-            if(isMoving) drain = 0.02; 
-            if(isSprinting) drain = 0.08; 
-            
-            hunger -= drain * delta;
-            if(hunger < 0) hunger = 0;
-
+            let drain = 0.005; if(isMoving) drain = 0.02; if(isSprinting) drain = 0.08; 
+            hunger -= drain * delta; if(hunger < 0) hunger = 0;
             hungerTimer += delta;
             if(hungerTimer > 4.0) { 
                 hungerTimer = 0;
-                if(hunger >= 9 && health < 10) health++; // Реген
-                if(hunger === 0) health--; // Урон
-                
+                if(hunger >= 9 && health < 10) health++; 
+                if(hunger === 0) health--; 
                 if(health <= 0) {
                     health = 10; hunger = 10;
-                    camera.position.set(0, 30, 0); // Респавн
-                    velocity.set(0,0,0);
+                    camera.position.set(0, 30, 0); velocity.set(0,0,0);
                     push(chatRef, { user: "System", msg: `${currentUser.displayName} погиб`, type: 'sys' });
                 }
                 updateStatsUI();
@@ -320,13 +295,6 @@
             if(Math.floor(hunger) !== document.querySelectorAll('.food:not(.empty)').length) updateStatsUI();
         }
 
-        window.toggleGamemode = () => {
-            if(!IS_HOST) return;
-            const newMode = GAME_MODE === 'survival' ? 'creative' : 'survival';
-            update(ref(db, `lobbies/${LOBBY_ID}`), { mode: newMode });
-        };
-
-        // --- ДВИЖОК И МИР ---
         function startEngine() { init3D(); isGameRunning = true; animate(); }
         function init3D() {
             scene = new THREE.Scene(); scene.background = new THREE.Color(0x87CEEB); scene.fog = new THREE.Fog(0x87CEEB, 10, SETTINGS.dist);
@@ -334,19 +302,15 @@
             scene.add(new THREE.AmbientLight(0xcccccc)); 
             const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(10,20,10); scene.add(dl);
             controls = new PointerLockControls(camera, document.body); controls.pointerSpeed = SETTINGS.sens;
-            
             controls.addEventListener('lock', () => { isPaused=false; document.getElementById('pause-menu').style.display='none'; isInvOpen=false; document.getElementById('inventory-screen').style.display='none'; });
             controls.addEventListener('unlock', () => { if(isInvOpen || isChatOpen || !isGameRunning) return; isPaused=true; document.getElementById('pause-menu').style.display='flex'; });
-            
             const l = new THREE.TextureLoader();
             try { materials = texUrls.map(u => new THREE.MeshLambertMaterial({ map: l.load(u, t=>{t.magFilter=THREE.NearestFilter}) })); } catch(e){}
             initUI();
-            
             document.addEventListener('keydown', onKey); document.addEventListener('keyup', onKey);
             document.addEventListener('wheel', onWheel); document.addEventListener('mousedown', onClick);
             document.addEventListener('mousemove', onMove);
             document.addEventListener('click', () => { if(isGameRunning && !isPaused && !isInvOpen && !isChatOpen && controls) controls.lock(); });
-            
             raycaster = new THREE.Raycaster(); raycaster.far = 5;
             renderer = new THREE.WebGLRenderer({antialias: true}); renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
@@ -354,19 +318,17 @@
         }
 
         function genTerrain() {
-            const R = WORLD_SIZE; // Используем выбранный размер!
+            const R = WORLD_SIZE; 
             for(let x=-R; x<R; x++) for(let z=-R; z<R; z++) {
                 createBlock(x, 0, z, materials[0], false, true);
                 for(let y=-1; y>=-4; y--) createBlock(x, y, z, materials[1], false, true);
                 for(let y=-5; y>=-9; y--) createBlock(x, y, z, materials[2], false, true);
                 createBlock(x, -10, z, materials[3], false, true);
             }
-            // Стены границы мира
             for(let x=-R-1; x<=R+1; x++) { createBlock(x,0, -R-1, materials[3], false, true); createBlock(x,0, R+1, materials[3], false, true); }
             for(let z=-R-1; z<=R+1; z++) { createBlock(-R-1,0, z, materials[3], false, true); createBlock(R+1,0, z, materials[3], false, true); }
         }
 
-        // --- БЛОКИ И TNT ---
         function getKey(x,y,z){return `${x},${y},${z}`;}
         function hasBlock(x,y,z){return worldData[getKey(Math.round(x),Math.round(y),Math.round(z))];}
         function createBlock(x,y,z,m,net=false, isGen=false) {
@@ -426,34 +388,22 @@
             }
         }
 
-        // --- УПРАВЛЕНИЕ ---
         function onKey(e) {
-            if(isChatOpen) {
-                if(e.key === 'Enter') toggleChat();
-                if(e.key === 'Escape') toggleChat();
-                return;
-            }
+            if(isChatOpen) { if(e.key === 'Enter') toggleChat(); if(e.key === 'Escape') toggleChat(); return; }
             const down = e.type === 'keydown';
             if(e.code === 'KeyT' && down) { toggleChat(); return; }
             if(e.code === 'KeyW') moveF = down; if(e.code === 'KeyS') moveB = down;
             if(e.code === 'KeyA') moveL = down; if(e.code === 'KeyD') moveR = down;
-            
-            // ПОЛЕТ (Двойной пробел)
             if(e.code === 'Space') {
                 if(down) {
                     const now = Date.now();
-                    if(GAME_MODE === 'creative' && (now - lastSpacePress < 300)) {
-                        isFlying = !isFlying; velocity.y = 0;
-                    }
+                    if(GAME_MODE === 'creative' && (now - lastSpacePress < 300)) { isFlying = !isFlying; velocity.y = 0; }
                     lastSpacePress = now;
                     if(!isFlying && canJump && !isCrouch) { velocity.y += JUMP; canJump = false; }
                 }
                 if(isFlying) velocity.y = down ? FLY_SPEED : 0;
             }
-            if(e.code === 'ShiftLeft') {
-                isCrouch = down;
-                if(isFlying) velocity.y = down ? -FLY_SPEED : 0;
-            }
+            if(e.code === 'ShiftLeft') { isCrouch = down; if(isFlying) velocity.y = down ? -FLY_SPEED : 0; }
             if(e.code === 'ControlLeft') isSprint = down; 
             if(down && e.code === 'KeyE') {
                 if(isInvOpen) { isInvOpen = false; document.getElementById('inventory-screen').style.display='none'; if(controls) controls.lock(); }
@@ -470,16 +420,12 @@
                 const obj = i[0].object;
                 const held = hotbar[selSlot];
                 if(e.button === 2) { 
-                    if(held === 11) { // Зажигалка
-                        const matIndex = materials.indexOf(obj.material);
-                        if((matIndex===10 || obj.userData.isTNT) && !obj.userData.isPrimed) igniteTNT(obj);
-                        return;
-                    }
+                    if(held === 11) { const matIndex = materials.indexOf(obj.material); if((matIndex===10 || obj.userData.isTNT) && !obj.userData.isPrimed) igniteTNT(obj); return; }
                     if(held === null) return;
                     const p = i[0].object.position.clone().add(i[0].face.normal);
                     const pBox = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(camera.position.x, camera.position.y-(P_H/2)+0.2, camera.position.z), new THREE.Vector3(P_W, P_H-0.2, P_W));
                     const bBox = new THREE.Box3().setFromCenterAndSize(p, new THREE.Vector3(1,1,1));
-                    if(pBox.intersectsBox(bBox)) return; // AABB check
+                    if(pBox.intersectsBox(bBox)) return;
                     createBlock(p.x, p.y, p.z, materials[held]);
                     if(held === 10) objectsMap[getKey(p.x, p.y, p.z)].userData.isTNT = true;
                 } else if(e.button === 0) {
@@ -500,14 +446,11 @@
         function animate() {
             requestAnimationFrame(animate); if(!isGameRunning || isPaused) return;
             const t = performance.now(), d = Math.min((t-prevTime)/1000, 0.05);
-            
             updatePrimedTNTs(t);
-
             const fwd = Number(moveF) - Number(moveB); const right = Number(moveR) - Number(moveL);
             const isMoving = fwd !== 0 || right !== 0;
 
             if(isFlying) {
-                // ПОЛЕТ
                 velocity.x = 0; velocity.z = 0;
                 const front = new THREE.Vector3(); camera.getWorldDirection(front); front.y=0; front.normalize();
                 const side = new THREE.Vector3(); side.crossVectors(front, camera.up).normalize();
@@ -516,7 +459,6 @@
                 velocity.x = dir.x * speed; velocity.z = dir.z * speed;
                 if(!keyState['Space'] && !keyState['ShiftLeft']) velocity.y = 0;
             } else {
-                // ХОДЬБА
                 velocity.y -= GRAVITY * d;
                 if(isMoving) {
                     const front = new THREE.Vector3(); camera.getWorldDirection(front); front.y=0; front.normalize();
@@ -534,7 +476,6 @@
             pos.z += velocity.z * d; if(resolveCol(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
             pos.y += velocity.y * d; 
             
-            // Проверка пола
             const r = P_W / 2; const minX = pos.x-r, maxX = pos.x+r; const minZ = pos.z-r, maxZ = pos.z+r; const minY = pos.y-EYE; const maxY = pos.y+(P_H-EYE);
             let colY = false;
             for(let y=Math.round(minY); y<=Math.round(maxY); y++) for(let z=Math.round(minZ); z<=Math.round(maxZ); z++) for(let x=Math.round(minX); x<=Math.round(maxX); x++)
@@ -560,7 +501,6 @@
             prevTime = t; renderer.render(scene, camera);
         }
 
-        // Helpers
         const keyState = {}; document.addEventListener('keydown', e => keyState[e.code] = true); document.addEventListener('keyup', e => keyState[e.code] = false);
         function initUI() { const g = document.getElementById('creative-grid'); texUrls.forEach((u,i) => { const d = document.createElement('div'); d.className='inv-slot'; d.style.backgroundImage=`url(${u})`; d.onclick = () => { holdBlock = i; updCur(u); }; g.appendChild(d); }); for(let i=0; i<9; i++) document.getElementById(`slot-${i}`).onclick = () => { if(isInvOpen && holdBlock!==null) { hotbar[i]=holdBlock; updHot(); holdBlock=null; updCur(null); } }; }
         function updCur(u) { const c=document.getElementById('cursor-item'); if(u){c.style.display='block';c.style.backgroundImage=`url(${u})`;}else c.style.display='none'; }
@@ -572,7 +512,7 @@
         function hideLoadingScreen() { document.getElementById('screen-error').style.display='none'; document.getElementById('game-ui').style.display='block'; }
         function spawnPlayer(id, data) { const g=new THREE.BoxGeometry(0.6, 1.8, 0.6); const m=new THREE.MeshLambertMaterial({color:0xff0000}); const mesh=new THREE.Mesh(g, m); if(data.nick) { const c=document.createElement('canvas'); const x=c.getContext('2d'); c.width=256;c.height=64; x.fillStyle="rgba(0,0,0,0.5)"; x.fillRect(0,0,256,64); x.fillStyle="white"; x.font="30px Arial"; x.textAlign="center"; x.fillText(data.nick,128,42); const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)})); s.position.y=1.6; s.scale.set(2,0.5,1); mesh.add(s); } mesh.position.set(data.x, data.y-0.9, data.z); scene.add(mesh); otherPlayers[id] = { mesh: mesh, targetPos: new THREE.Vector3(data.x, data.y-0.9, data.z), targetRot: data.rotation }; }
         function movePlayer(id, data) { if(otherPlayers[id]) { otherPlayers[id].targetPos.set(data.x, data.y-0.9, data.z); otherPlayers[id].targetRot = data.rotation; } }
-        function loadLocalWorld() { document.getElementById('info-panel').innerText = `Мир: ${WORLD_NAME}`; const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}'); const data = worlds[WORLD_NAME]?.blocks || {}; genTerrain(); if(Object.keys(data).length > 0) { for(let k in data) { const [x,y,z] = k.split(',').map(Number); const mat = data[k]; if(hasBlock(x,y,z)) removeBlockLocal(objectsMap[`${x},${y},${z}`]); createBlock(x,y,z, materials[mat], false, false); } } }
+        function loadLocalWorld() { document.getElementById('info-panel').innerText = `Мир: ${WORLD_NAME}`; const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}'); const data = worlds[WORLD_NAME]?.blocks || {}; genTerrain(); if(Object.keys(data).length > 0) { for(let k in data) { const [x,y,z] = k.split(',').map(Number); const mat = data[k]; if(hasBlock(x,y,z)) removeBlockLocal(objectsMap[`${x},${y},${z}`]); createBlock(x,y,z, materials[mat], false, false); if(mat===10) objectsMap[`${x},${y},${z}`].userData.isTNT = true; } } }
         function saveLocalWorld() { if(MODE !== 'single') return; const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}'); const b = {}; for(let k in worldData) { if(objectsMap[k]) b[k] = materials.indexOf(objectsMap[k].material); } worlds[WORLD_NAME].blocks = b; localStorage.setItem('mc_worlds', JSON.stringify(worlds)); }
     </script>
 </body>
