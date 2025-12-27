@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: FAT HITBOX 0.9</title>
+    <title>Minecraft JS: Symmetrical Physics</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         :root { --mc-btn-bg: #777; --mc-btn-border-light: #aaa; --mc-btn-border-dark: #555; }
@@ -198,14 +198,14 @@
         let settings = { sensitivity: 0.5, renderDist: 60 };
         let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
         
-        // --- PHYSICS SETTINGS ---
+        // --- PHYSICS CONSTANTS ---
         const WALK_SPEED = 5.0; 
         const SPRINT_SPEED = 8.0; 
         const CROUCH_SPEED = 3.0; 
         const JUMP_FORCE = 9; 
         const GRAVITY = 24.0;
         
-        // !!! IMPORTANT CHANGE: WIDTH 0.9 !!!
+        // !!! FAT HITBOX 0.9 !!!
         const PLAYER_WIDTH = 0.9; 
         const PLAYER_HEIGHT = 1.8; 
         const EYE_HEIGHT = 1.6;
@@ -352,22 +352,33 @@
         function updateOtherPlayer(id,data){const p=otherPlayers[id];p.mesh.position.set(data.x,data.y-0.9,data.z);p.mesh.rotation.y=data.rotation;}
         function uploadPos(){if(isMultiplayer&&playerRef)set(playerRef,{x:camera.position.x,y:camera.position.y,z:camera.position.z,rotation:camera.rotation.y,nick:currentUser.displayName});}
 
+        // --- NEW SYMMETRICAL PHYSICS ---
         function resolveCollision(newPos) {
             const radius = PLAYER_WIDTH / 2;
             let minX = newPos.x - radius; let maxX = newPos.x + radius;
             let minY = newPos.y - EYE_HEIGHT; let maxY = newPos.y + (PLAYER_HEIGHT - EYE_HEIGHT);
             let minZ = newPos.z - radius; let maxZ = newPos.z + radius;
-            const startX = Math.floor(minX), endX = Math.floor(maxX);
-            const startY = Math.floor(minY), endY = Math.floor(maxY);
-            const startZ = Math.floor(minZ), endZ = Math.floor(maxZ);
+
+            // FIX: Use ROUND instead of FLOOR to handle coordinates correctly around 0
+            const startX = Math.round(minX); const endX = Math.round(maxX);
+            const startY = Math.round(minY); const endY = Math.round(maxY);
+            const startZ = Math.round(minZ); const endZ = Math.round(maxZ);
+
             for (let y = startY; y <= endY; y++) {
                 for (let z = startZ; z <= endZ; z++) {
                     for (let x = startX; x <= endX; x++) {
                         if (hasBlock(x, y, z)) {
+                            // Block AABB (Centered at x,y,z with width 1)
                             const bMinX = x - 0.5, bMaxX = x + 0.5;
                             const bMinY = y - 0.5, bMaxY = y + 0.5;
                             const bMinZ = z - 0.5, bMaxZ = z + 0.5;
-                            if (maxX > bMinX && minX < bMaxX && maxY > bMinY && minY < bMaxY && maxZ > bMinZ && minZ < bMaxZ) return true;
+                            
+                            // Check overlap
+                            if (maxX > bMinX && minX < bMaxX && 
+                                maxY > bMinY && minY < bMaxY && 
+                                maxZ > bMinZ && minZ < bMaxZ) {
+                                return true;
+                            }
                         }
                     }
                 }
@@ -401,14 +412,20 @@
                 }
                 velocity.x -= velocity.x * 10.0 * d; velocity.z -= velocity.z * 10.0 * d;
                 const pos = camera.position.clone();
-                pos.x += velocity.x * d; if (resolveCollision(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
-                pos.z += velocity.z * d; if (resolveCollision(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
+                
+                pos.x += velocity.x * d; 
+                if (resolveCollision(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
+                
+                pos.z += velocity.z * d; 
+                if (resolveCollision(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
+                
                 pos.y += velocity.y * d; 
                 if (resolveCollision(pos)) { 
                     const wasFalling = velocity.y < 0; 
                     pos.y -= velocity.y * d; velocity.y = 0; 
                     if (wasFalling) { 
                         canJump = true; 
+                        // Snap to top
                         const feetY = pos.y - EYE_HEIGHT;
                         const blockY = Math.round(feetY - 0.5);
                         pos.y = blockY + 0.5 + EYE_HEIGHT; 
