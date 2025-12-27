@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: Stable Build</title>
+    <title>Minecraft JS: Fixed Movement</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
@@ -45,8 +45,6 @@
             display: flex; justify-content: space-between; align-items: center;
         }
         .list-item:hover { background: rgba(255,255,255,0.1); }
-        
-        .status-active { color: #55ff55; font-size: 12px; margin-left: 10px; }
         .del-btn { background: #aa0000; padding: 2px 6px; cursor: pointer; border: 1px solid #fff; font-size: 12px; }
 
         #game-ui { display: none; } 
@@ -177,7 +175,7 @@
         import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get, query, orderByChild, equalTo } from "firebase-database";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut } from "firebase-auth";
 
-        // --- FIREBASE CONFIG ---
+        // --- CONFIG ---
         const firebaseConfig = {
           apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI",
           authDomain: "minecraft-2ec53.firebaseapp.com",
@@ -190,45 +188,19 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        // --- VARIABLES ---
-        let isRegisterMode = false, currentUser = null, statusRef = null, heartbeatInterval = null;
-        let camera, scene, renderer, controls;
-        const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
-        let isMultiplayer = false, isHost = false, currentLobbyId = null, currentWorldName = null;
-        let isPaused = false, isGameRunning = false;
-        let playerRef, worldRef, lobbyRefCheck;
-        let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false, canJump=false, isSprinting=false, isCrouching=false;
-        const velocity = new THREE.Vector3(), direction = new THREE.Vector3();
-        let prevTime = performance.now(), lastUploadTime = 0;
-        let settings = { sensitivity: 0.5, renderDist: 60 };
-        let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
-        
-        // --- PHYSICS CONSTANTS ---
-        const WALK_SPEED=30.0, SPRINT_SPEED=50.0, CROUCH_SPEED=10.0, JUMP_FORCE=9, GRAVITY=24.0;
-        const PLAYER_WIDTH = 0.6; // Width 0.6 = Radius 0.3
-        const PLAYER_HEIGHT = 1.8;
-        const EYE_HEIGHT = 1.6;
-        
-        const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-        let materials = [];
-        const textureUrls = ['./textures/grass.png', './textures/dirt.png', './textures/bricks.png', './textures/obsidian.png', './textures/iron.png'];
-
         // --- AUTH ---
+        let isRegisterMode = false, currentUser = null, statusRef = null, heartbeatInterval = null;
         window.toggleAuthMode = () => { isRegisterMode=!isRegisterMode; document.getElementById('auth-title').innerText=isRegisterMode?"РЕГИСТРАЦИЯ":"ВХОД"; document.getElementById('btn-auth-action').innerText=isRegisterMode?"СОЗДАТЬ АККАУНТ":"ВОЙТИ"; document.getElementById('auth-toggle').innerText=isRegisterMode?"Уже есть аккаунт? Войти":"Нет аккаунта? Зарегистрироваться"; document.getElementById('auth-nick').style.display=isRegisterMode?"block":"none"; };
-        
         window.handleAuth = () => {
             const e=document.getElementById('auth-email').value, p=document.getElementById('auth-pass').value, n=document.getElementById('auth-nick').value, err=document.getElementById('auth-error');
             if(!e||!p){err.style.display='block';err.innerText="Заполните поля";return;}
             if(isRegisterMode){ if(!n){err.style.display='block';err.innerText="Нужен никнейм";return;} createUserWithEmailAndPassword(auth,e,p).then((uc)=>{updateProfile(uc.user,{displayName:n});}).catch((e)=>{err.style.display='block';err.innerText=e.message;}); }
             else { signInWithEmailAndPassword(auth,e,p).catch((e)=>{err.style.display='block';err.innerText="Ошибка входа";}); }
         };
-
         window.logout = () => { stopHeartbeat(); if(statusRef)set(statusRef,{state:'offline'}).then(()=>signOut(auth)); else signOut(auth); showScreen('screen-auth'); };
         window.forceLogout = () => { signOut(auth); location.reload(); };
-
         function startHeartbeat(){ if(heartbeatInterval)clearInterval(heartbeatInterval); if(statusRef)set(statusRef,{state:'online',last_seen:Date.now()}); heartbeatInterval=setInterval(()=>{if(currentUser&&statusRef){set(ref(db,`status/${currentUser.uid}/last_seen`),Date.now());}},5000); }
         function stopHeartbeat(){ if(heartbeatInterval)clearInterval(heartbeatInterval); }
-
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 const userStatusRef = ref(db, `status/${user.uid}`);
@@ -245,6 +217,24 @@
         });
         window.addEventListener("beforeunload", ()=>{ if(statusRef)set(statusRef,{state:'offline'}); });
 
+        // --- GLOBALS ---
+        let camera, scene, renderer, controls;
+        const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
+        let isMultiplayer = false, isHost = false, currentLobbyId = null, currentWorldName = null;
+        let isPaused = false, isGameRunning = false;
+        let playerRef, worldRef, lobbyRefCheck;
+        let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false, canJump=false, isSprinting=false, isCrouching=false;
+        const velocity = new THREE.Vector3();
+        let prevTime = performance.now(), lastUploadTime = 0;
+        let settings = { sensitivity: 0.5, renderDist: 60 };
+        let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
+        
+        const WALK_SPEED=30.0, SPRINT_SPEED=50.0, CROUCH_SPEED=10.0, JUMP_FORCE=9, GRAVITY=24.0;
+        const PLAYER_WIDTH = 0.6; const PLAYER_HEIGHT = 1.8; const EYE_HEIGHT = 1.6;
+        const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+        let materials = [];
+        const textureUrls = ['./textures/grass.png', './textures/dirt.png', './textures/bricks.png', './textures/obsidian.png', './textures/iron.png'];
+
         // --- MENUS ---
         window.showScreen = (screenId) => {
             document.querySelectorAll('.menu-screen').forEach(el => el.style.display = 'none');
@@ -252,7 +242,6 @@
             if(screenId==='screen-worlds')renderWorldList();
             if(screenId==='screen-multi')fetchMyServers();
         };
-
         const sS=document.getElementById('sens-slider'), dS=document.getElementById('dist-slider');
         sS.oninput=()=>document.getElementById('sens-val').innerText=sS.value; dS.oninput=()=>document.getElementById('dist-val').innerText=dS.value;
         window.saveSettings=()=>{ settings.sensitivity=parseFloat(sS.value); settings.renderDist=parseInt(dS.value); if(controls)controls.pointerSpeed=settings.sensitivity; if(isGameRunning){document.getElementById('screen-settings').style.display='none';document.getElementById('pause-menu').style.display='flex';}else showScreen('screen-main'); };
@@ -289,7 +278,7 @@
             setTimeout(()=>{if(Object.keys(worldData).length===0)generateBasicTerrain()},1000);
         }
 
-        // --- ENGINE & INIT ---
+        // --- ENGINE ---
         function startEngine(){ document.querySelectorAll('.menu-screen').forEach(el=>el.style.display='none'); document.getElementById('game-ui').style.display='block'; init(); controls.pointerSpeed=settings.sensitivity; scene.fog.far=settings.renderDist; camera.far=settings.renderDist*2; isGameRunning=true; isPaused=false; animate(); setTimeout(()=>{alert("Кликни чтобы играть");},100); }
         window.resumeGame=()=>{document.getElementById('pause-menu').style.display='none';controls.lock();};
         window.quitToTitle=(f=false,m="")=>{ if(lobbyRefCheck)lobbyRefCheck(); if(isMultiplayer&&!f)remove(playerRef); if(!isMultiplayer&&currentWorldName&&!f){const w=getLocalWorlds();const b={};for(let k in worldData){if(objectsMap[k])b[k]=materials.indexOf(objectsMap[k].material);}w[currentWorldName].blocks=b;saveLocalWorlds(w);} if(f)alert(m); location.reload(); };
@@ -309,7 +298,6 @@
             renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(window.innerWidth,window.innerHeight);document.body.appendChild(renderer.domElement);window.addEventListener('resize',onRez);
         }
 
-        // --- CONTROLS ---
         function onKeyDown(e){ if(!isGameRunning)return; if(e.code==='KeyE'){if(isPaused)return;if(isInventoryOpen){isInventoryOpen=false;document.getElementById('inventory-screen').style.display='none';controls.lock();}else{isInventoryOpen=true;document.getElementById('inventory-screen').style.display='flex';controls.unlock();}return;} if(e.code==='KeyW')moveForward=true;if(e.code==='KeyA')moveLeft=true;if(e.code==='KeyS')moveBackward=true;if(e.code==='KeyD')moveRight=true; if(e.code==='Space'){if(canJump&&!isCrouching){velocity.y+=JUMP_FORCE;canJump=false;}} if(e.code==='ControlLeft')isSprinting=true;if(e.code==='ShiftLeft')isCrouching=true; if(e.code.startsWith('Digit')){const n=parseInt(e.code.slice(5))-1;if(n>=0&&n<5)selectSlot(n);} }
         function onKeyUp(e){if(e.code==='KeyW')moveForward=false;if(e.code==='KeyA')moveLeft=false;if(e.code==='KeyS')moveBackward=false;if(e.code==='KeyD')moveRight=false;if(e.code==='ControlLeft')isSprinting=false;if(e.code==='ShiftLeft')isCrouching=false;}
         function onWheel(e){if(isPaused||isInventoryOpen)return;if(e.deltaY>0){let s=selectedSlot+1;if(s>4)s=0;selectSlot(s);}else{let s=selectedSlot-1;if(s<0)s=4;selectSlot(s);}}
@@ -341,7 +329,7 @@
         function updateOtherPlayer(id,data){const p=otherPlayers[id];p.mesh.position.set(data.x,data.y-0.9,data.z);p.mesh.rotation.y=data.rotation;}
         function uploadPos(){if(isMultiplayer&&playerRef)set(playerRef,{x:camera.position.x,y:camera.position.y,z:camera.position.z,rotation:camera.rotation.y,nick:currentUser.displayName});}
 
-        // --- AABB PHYSICS (SOLID) ---
+        // --- SOLID PHYSICS & FIX MOVEMENT ---
         function resolveCollision(newPos) {
             const radius = PLAYER_WIDTH / 2;
             let minX = newPos.x - radius; let maxX = newPos.x + radius;
@@ -373,20 +361,54 @@
             const t=performance.now(), d=Math.min((t-prevTime)/1000,0.05);
             let sim=false; if(isMultiplayer)sim=true; else if(!isPaused&&!isInventoryOpen&&controls.isLocked)sim=true;
             if(sim) {
+                // Gravity
                 velocity.y -= GRAVITY * d;
+
+                // FIX: Camera-Relative Movement
                 if((isMultiplayer&&controls.isLocked&&!isInventoryOpen)||(!isMultiplayer&&sim)) {
-                    direction.z=Number(moveForward)-Number(moveBackward); direction.x=Number(moveRight)-Number(moveLeft); direction.normalize();
-                    let spd=isCrouching?CROUCH_SPEED:(isSprinting?SPRINT_SPEED:WALK_SPEED);
-                    if(moveForward||moveBackward)velocity.z-=direction.z*spd*d; if(moveLeft||moveRight)velocity.x-=direction.x*spd*d;
+                    // 1. Get Input
+                    const forwardInput = Number(moveForward) - Number(moveBackward);
+                    const rightInput = Number(moveRight) - Number(moveLeft);
+
+                    if (forwardInput !== 0 || rightInput !== 0) {
+                        // 2. Get Camera Direction (Horizontal)
+                        const front = new THREE.Vector3();
+                        camera.getWorldDirection(front);
+                        front.y = 0; front.normalize();
+
+                        const right = new THREE.Vector3();
+                        right.crossVectors(camera.up, front).normalize(); // Correct Right vector
+
+                        // 3. Combine
+                        const moveDir = new THREE.Vector3();
+                        moveDir.addScaledVector(front, forwardInput);
+                        moveDir.addScaledVector(right, rightInput); // A/D uses Right vector
+                        moveDir.normalize();
+
+                        let spd=isCrouching?CROUCH_SPEED:(isSprinting?SPRINT_SPEED:WALK_SPEED);
+                        
+                        // Apply to velocity
+                        velocity.x += moveDir.x * spd * d * 10; // Acceleration factor
+                        velocity.z += moveDir.z * spd * d * 10;
+                    }
                 }
-                velocity.x -= velocity.x * 10.0 * d; velocity.z -= velocity.z * 10.0 * d;
+                
+                // Friction
+                velocity.x -= velocity.x * 10.0 * d;
+                velocity.z -= velocity.z * 10.0 * d;
 
                 // Physics Steps
                 const pos = camera.position.clone();
+                
+                // X
                 pos.x += velocity.x * d;
                 if (resolveCollision(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
+                
+                // Z
                 pos.z += velocity.z * d;
                 if (resolveCollision(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
+                
+                // Y
                 pos.y += velocity.y * d;
                 if (resolveCollision(pos)) {
                     const wasFalling = velocity.y < 0;
