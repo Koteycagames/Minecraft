@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Сетевая игра</title>
+    <style>
+        body { margin: 0; font-family: 'Courier New', monospace; background: url('./textures/dirt.png'); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: white; }
+        body::before { content: ""; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); z-index: -1; }
+        .list { width: 400px; height: 200px; background: rgba(0,0,0,0.5); border: 2px solid #555; overflow-y: auto; margin-bottom: 20px; }
+        .item { padding: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
+        .mc-btn { width: 400px; padding: 10px; margin: 5px; font-size: 18px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; }
+        .del { background: #a00; color: white; padding: 2px 5px; cursor: pointer; }
+        .input-code { width: 380px; padding: 10px; margin: 10px 0; background: black; color: white; border: 2px solid #555; }
+    </style>
+</head>
+<body>
+    <h1>СЕТЕВАЯ ИГРА</h1>
+    
+    <div style="text-align:left; width: 400px; color: #aaa;">Мои сервера:</div>
+    <div class="list" id="server-list">Загрузка...</div>
+
+    <button class="mc-btn" onclick="createLobby()">СОЗДАТЬ СЕРВЕР</button>
+    
+    <hr style="width: 400px; border-color: #555;">
+    
+    <input type="text" id="join-code" class="input-code" placeholder="Код приглашения">
+    <button class="mc-btn" onclick="joinLobby()">ПОДКЛЮЧИТЬСЯ</button>
+    <button class="mc-btn" onclick="window.location.href='main.html'">НАЗАД</button>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, set, remove, onValue, get, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        const app = initializeApp({ apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI", authDomain: "minecraft-2ec53.firebaseapp.com", projectId: "minecraft-2ec53", storageBucket: "minecraft-2ec53.firebasestorage.app", messagingSenderId: "1065608540888", appId: "1:1065608540888:web:6d0a253399e3f6ff94ddad" });
+        const db = getDatabase(app);
+        const auth = getAuth(app);
+        let currentUser = null;
+
+        onAuthStateChanged(auth, (user) => {
+            if(user) {
+                currentUser = user;
+                loadMyServers();
+            } else {
+                window.location.href = 'main.html'; // Выкидываем, если не залогинен
+            }
+        });
+
+        function loadMyServers() {
+            const list = document.getElementById('server-list');
+            const q = query(ref(db, 'lobbies'), orderByChild('ownerId'), equalTo(currentUser.uid));
+            
+            onValue(q, (snap) => {
+                list.innerHTML = '';
+                if(!snap.exists()) { list.innerHTML = '<div style="padding:10px; color:#777">Нет серверов</div>'; return; }
+                snap.forEach(child => {
+                    const code = child.key;
+                    const div = document.createElement('div');
+                    div.className = 'item';
+                    div.innerHTML = `<span>Лобби: ${code}</span> <button class="del" id="del-${code}">ВЫКЛ</button>`;
+                    div.onclick = (e) => {
+                        if(e.target.id === `del-${code}`) {
+                            if(confirm('Выключить сервер?')) remove(ref(db, `lobbies/${code}`));
+                        } else {
+                            // Клик по названию - копирует код в поле
+                            document.getElementById('join-code').value = code;
+                        }
+                    };
+                    list.appendChild(div);
+                });
+            });
+        }
+
+        window.createLobby = () => {
+            const code = Math.floor(1000 + Math.random() * 9000).toString();
+            set(ref(db, `lobbies/${code}`), {
+                ownerId: currentUser.uid,
+                created: Date.now(),
+                world: {},
+                players: {}
+            }).then(() => {
+                enterGame(code, true);
+            });
+        };
+
+        window.joinLobby = () => {
+            const code = document.getElementById('join-code').value;
+            if(!code) return alert("Введите код");
+            get(ref(db, `lobbies/${code}`)).then(snap => {
+                if(snap.exists()) {
+                    const isHost = (snap.val().ownerId === currentUser.uid);
+                    enterGame(code, isHost);
+                } else {
+                    alert("Сервер не найден");
+                }
+            });
+        };
+
+        function enterGame(code, isHost) {
+            localStorage.setItem('mc_mode', 'multi');
+            localStorage.setItem('mc_lobby_id', code);
+            localStorage.setItem('mc_is_host', isHost);
+            window.location.href = 'game.html';
+        }
+    </script>
+</body>
+</html>
