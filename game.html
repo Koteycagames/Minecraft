@@ -2,21 +2,20 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: TNT UPDATE</title>
+    <title>Minecraft JS: REAL TNT</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; background: #000; }
         
         #game-ui { display: none; }
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); z-index: 10; pointer-events: none; }
         
-        /* ОБНОВЛЕННЫЙ ХОТБАР НА 9 СЛОТОВ */
         #hotbar { 
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); 
-            display: flex; gap: 5px; /* Чуть меньше зазор */
+            display: flex; gap: 5px; 
             background: rgba(0,0,0,0.5); padding: 5px; border-radius: 5px; z-index: 150; 
         }
         .slot { 
-            width: 50px; height: 50px; /* Чуть меньше слот, чтобы все влезло */
+            width: 50px; height: 50px; 
             border: 3px solid #555; background-color: rgba(0,0,0,0.4); 
             background-size: cover; cursor: pointer; 
         }
@@ -28,7 +27,7 @@
         .mc-btn { width: 300px; padding: 15px; margin: 10px; font-size: 20px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; text-shadow: 2px 2px #000; }
         .mc-btn:hover { background: #888; color: white; border-color: #777; }
         
-        .inv-grid { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 500px; } /* Шире для новых блоков */
+        .inv-grid { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 500px; }
         .inv-slot { width: 50px; height: 50px; border: 2px solid #888; background: #8b8b8b; cursor: pointer; background-size: cover; }
         #cursor-item { position: absolute; width: 40px; height: 40px; pointer-events: none; z-index: 200; background-size: cover; display: none; border: 2px solid yellow; }
 
@@ -123,25 +122,16 @@
         
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
-        
-        // --- ОБНОВЛЕННЫЙ СПИСОК (TNT = 10, ЗАЖИГАЛКА = 11) ---
         const texUrls = [
-            './textures/grass.png',    // 0
-            './textures/dirt.png',     // 1
-            './textures/stone.png',    // 2
-            './textures/obsidian.png', // 3
-            './textures/iron.png',     // 4
-            './textures/log.png',      // 5
-            './textures/planks.png',   // 6
-            './textures/brick.png',    // 7
-            './textures/sand.png',     // 8
-            './textures/diamond.png',  // 9
-            './textures/tnt.png',      // 10: ДИНАМИТ
-            './textures/flint.png'     // 11: ЗАЖИГАЛКА
+            './textures/grass.png', './textures/dirt.png', './textures/stone.png', './textures/obsidian.png', './textures/iron.png', 
+            './textures/log.png', './textures/planks.png', './textures/brick.png', './textures/sand.png', './textures/diamond.png',
+            './textures/tnt.png', './textures/flint.png'
         ];
         
-        // Хотбар теперь на 9 слотов
         let hotbar = [null,null,null,null,null,null,null,null,null], selSlot=0, holdBlock=null;
+        
+        // --- СПИСОК АКТИВИРОВАННЫХ ТНТ ---
+        const primedTNTs = []; // { mesh, explodeTime, nextBlink, isWhite }
 
         if(MODE === 'multi') {
             onAuthStateChanged(auth, user => {
@@ -180,12 +170,10 @@
         function connectToLobby() {
             document.getElementById('info-panel').innerText = `Сервер: ${LOBBY_ID}`;
             genTerrain();
-
             onValue(ref(db, `lobbies/${LOBBY_ID}`), s => { 
                 if(!s.exists()) quit(true, "Сервер удален", "Хост удалил этот мир"); 
                 else if(s.val().status === 'offline' && !IS_HOST) quit(true, "Сервер остановлен", "Хост выключил сервер");
             });
-
             playerRef = ref(db, `lobbies/${LOBBY_ID}/players/${currentUser.uid}`);
             onDisconnect(playerRef).remove();
             set(playerRef, { x:0, y:20, z:0, rotation:0, nick: currentUser.displayName });
@@ -214,6 +202,11 @@
                 const [x,y,z] = snap.key.split('_').map(Number);
                 const val = snap.val();
                 const existing = objectsMap[`${x},${y},${z}`];
+                
+                // Проверяем, не является ли этот блок уже активированным ТНТ
+                // Если он активирован, мы не трогаем его удаление через сеть, ждем взрыва
+                if (existing && existing.userData.isPrimed) return;
+
                 if (existing) removeBlockLocal(existing);
                 if (val !== 99) createBlock(x,y,z, materials[val], true, false); 
             };
@@ -257,15 +250,8 @@
             scene.add(new THREE.AmbientLight(0xcccccc)); 
             const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(10,20,10); scene.add(dl);
             controls = new PointerLockControls(camera, document.body); controls.pointerSpeed = SETTINGS.sens;
-            
-            controls.addEventListener('lock', () => { 
-                isPaused=false; document.getElementById('pause-menu').style.display='none'; 
-                isInvOpen=false; document.getElementById('inventory-screen').style.display='none'; 
-            });
-            controls.addEventListener('unlock', () => { 
-                if(isInvOpen || !isGameRunning) return; 
-                isPaused=true; document.getElementById('pause-menu').style.display='flex'; 
-            });
+            controls.addEventListener('lock', () => { isPaused=false; document.getElementById('pause-menu').style.display='none'; isInvOpen=false; document.getElementById('inventory-screen').style.display='none'; });
+            controls.addEventListener('unlock', () => { if(isInvOpen || !isGameRunning) return; isPaused=true; document.getElementById('pause-menu').style.display='flex'; });
             
             const l = new THREE.TextureLoader();
             try { materials = texUrls.map(u => new THREE.MeshLambertMaterial({ map: l.load(u, t=>{t.magFilter=THREE.NearestFilter}) })); } catch(e){}
@@ -305,32 +291,93 @@
             delete worldData[k]; delete objectsMap[k];
         }
 
-        // --- ЛОГИКА ВЗРЫВА ---
+        // --- ЛОГИКА АКТИВАЦИИ TNT (Поджиг) ---
+        function igniteTNT(mesh, delayTime = 3000) {
+            if(mesh.userData.isPrimed) return; // Уже горит
+            mesh.userData.isPrimed = true;
+            
+            // Клонируем материал, чтобы мигал только ЭТОТ блок
+            mesh.material = mesh.material.clone();
+            
+            primedTNTs.push({
+                mesh: mesh,
+                explodeTime: performance.now() + delayTime,
+                nextBlink: performance.now() + 200,
+                isWhite: false
+            });
+        }
+
+        // --- ЛОГИКА ОБНОВЛЕНИЯ МИГАНИЯ ---
+        function updatePrimedTNTs(time) {
+            for(let i = primedTNTs.length - 1; i >= 0; i--) {
+                const tnt = primedTNTs[i];
+                
+                // Взрыв
+                if(time >= tnt.explodeTime) {
+                    explode(tnt.mesh.position.x, tnt.mesh.position.y, tnt.mesh.position.z);
+                    // Удаляем блок ПОСЛЕ взрыва
+                    removeBlockLocal(tnt.mesh); 
+                    // Сообщаем серверу, что блок исчез
+                    if(MODE === 'multi') {
+                        const bx = Math.round(tnt.mesh.position.x);
+                        const by = Math.round(tnt.mesh.position.y);
+                        const bz = Math.round(tnt.mesh.position.z);
+                        set(ref(db, `lobbies/${LOBBY_ID}/world/${bx}_${by}_${bz}`), 99);
+                    }
+                    primedTNTs.splice(i, 1);
+                    continue;
+                }
+                
+                // Мигание
+                if(time >= tnt.nextBlink) {
+                    tnt.isWhite = !tnt.isWhite;
+                    if(tnt.isWhite) tnt.mesh.material.emissive.setHex(0xffffff); // Белый
+                    else tnt.mesh.material.emissive.setHex(0x000000); // Обычный
+                    
+                    // Частота мигания увеличивается перед взрывом
+                    const timeLeft = tnt.explodeTime - time;
+                    const interval = timeLeft < 1000 ? 100 : 250;
+                    tnt.nextBlink = time + interval;
+                }
+            }
+        }
+
+        // --- ЛОГИКА ВЗРЫВА (Цепная реакция) ---
         function explode(cx, cy, cz) {
-            const R = 4; // Радиус взрыва
-            // Удаляем блоки
+            const R = 4;
+            // Перебираем блоки вокруг
             for(let x = cx - R; x <= cx + R; x++) {
                 for(let y = cy - R; y <= cy + R; y++) {
                     for(let z = cz - R; z <= cz + R; z++) {
                         if(Math.sqrt((x-cx)**2 + (y-cy)**2 + (z-cz)**2) <= R) {
                             if(hasBlock(x,y,z)) {
                                 const obj = objectsMap[`${x},${y},${z}`];
-                                removeBlockLocal(obj);
-                                if(MODE === 'multi') set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
+                                
+                                // ЕСЛИ ЭТО TNT (ID 10)
+                                if(materials.indexOf(obj.material) === 10 || (obj.material.map && obj.material.map.name === 'tnt')) { // Проверка материала
+                                    // Поджигаем его с короткой задержкой (0.2 - 0.5 сек)
+                                    // Чтобы была красивая цепная реакция
+                                    const delay = 200 + Math.random() * 300;
+                                    igniteTNT(obj, delay); 
+                                } else {
+                                    // Обычный блок просто удаляем
+                                    if(!obj.userData.isPrimed) { // Не удаляем уже горящие TNT
+                                        removeBlockLocal(obj);
+                                        if(MODE === 'multi') set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-
-            // Отбрасываем игрока (физика)
+            // Отбрасывание игрока
             const dist = camera.position.distanceTo(new THREE.Vector3(cx, cy, cz));
             if(dist < R + 2) {
-                // Вектор от взрыва к игроку
                 const dir = new THREE.Vector3().subVectors(camera.position, new THREE.Vector3(cx, cy, cz)).normalize();
-                const force = (R + 2 - dist) * 1.5; // Чем ближе, тем сильнее
+                const force = (R + 2 - dist) * 1.5;
                 velocity.addScaledVector(dir, force * 15);
-                velocity.y += force * 5; // Подбрасываем вверх
+                velocity.y += force * 5;
             }
         }
 
@@ -341,33 +388,23 @@
             
             if(i.length > 0 && i[0].distance <= 5) {
                 const obj = i[0].object;
-                const bx = Math.round(obj.position.x), by = Math.round(obj.position.y), bz = Math.round(obj.position.z);
                 const heldItem = hotbar[selSlot];
 
-                if(e.button === 2) { // ПКМ (Взаимодействие / Установка)
-                    
-                    // ЕСЛИ У НАС В РУКАХ ЗАЖИГАЛКА (ID 11)
+                if(e.button === 2) { // ПКМ
+                    // ЗАЖИГАЛКА (11)
                     if(heldItem === 11) {
-                        // Проверяем, кликнули ли мы по TNT (ID 10)
-                        // Тут хитрость: нам нужно узнать материал блока.
                         const matIndex = materials.indexOf(obj.material);
-                        if(matIndex === 10) {
-                            // ПОДЖИГАЕМ!
-                            // Для простоты - взрыв через таймер
-                            // Можно добавить мигание, но пока просто удалим блок и через 2 сек БУМ
-                            removeBlockLocal(obj); // TNT исчезает
-                            setTimeout(() => explode(bx, by, bz), 2000); // БУМ через 2 сек
-                            return; // Больше ничего не делаем
+                        // Если кликнули по TNT (10) и он еще не горит
+                        if((matIndex === 10 || (obj.userData.isTNT)) && !obj.userData.isPrimed) {
+                            igniteTNT(obj); // Запускаем таймер 3 сек
+                            return;
                         }
-                        return; // Зажигалкой строить нельзя
+                        return;
                     }
 
-                    // ОБЫЧНАЯ СТРОЙКА
                     if(heldItem === null) return;
                     
                     const p = i[0].object.position.clone().add(i[0].face.normal);
-                    
-                    // Проверка коллизии
                     const playerBox = new THREE.Box3().setFromCenterAndSize(
                         new THREE.Vector3(camera.position.x, camera.position.y - (P_H/2) + 0.2, camera.position.z), 
                         new THREE.Vector3(P_W, P_H - 0.2, P_W)
@@ -376,8 +413,18 @@
                     if (playerBox.intersectsBox(blockBox)) return; 
 
                     createBlock(p.x, p.y, p.z, materials[heldItem]);
+                    
+                    // Помечаем TNT, чтобы потом знать что это он (так как material.indexOf может сбиться при клонировании)
+                    if(heldItem === 10) {
+                        const k = getKey(p.x, p.y, p.z);
+                        if(objectsMap[k]) objectsMap[k].userData.isTNT = true;
+                    }
 
-                } else if(e.button === 0) { // ЛКМ (Ломать)
+                } else if(e.button === 0) { // ЛКМ
+                    // Нельзя ломать рукой горящий TNT
+                    if(obj.userData.isPrimed) return;
+                    
+                    const bx = Math.round(obj.position.x), by = Math.round(obj.position.y), bz = Math.round(obj.position.z);
                     removeBlockLocal(obj);
                     if(MODE === 'multi') set(ref(db, `lobbies/${LOBBY_ID}/world/${bx}_${by}_${bz}`), 99);
                 }
@@ -411,6 +458,8 @@
                     const mat = data[k];
                     if(hasBlock(x,y,z)) removeBlockLocal(objectsMap[`${x},${y},${z}`]);
                     createBlock(x,y,z, materials[mat], false, false); 
+                    // Восстанавливаем флаг TNT при загрузке
+                    if(mat === 10) objectsMap[`${x},${y},${z}`].userData.isTNT = true;
                 }
             }
         }
@@ -424,7 +473,6 @@
             localStorage.setItem('mc_worlds', JSON.stringify(worlds));
         }
 
-        // --- УПРАВЛЕНИЕ ХОТБАРОМ (1-9) ---
         function onKey(e) {
             const down = e.type === 'keydown';
             if(e.code === 'KeyW') moveF = down; if(e.code === 'KeyS') moveB = down;
@@ -437,7 +485,7 @@
             }
             if(down && e.code.startsWith('Digit')) { 
                 const n = parseInt(e.code.slice(5))-1; 
-                if(n>=0 && n<9) selectSlot(n); // ТЕПЕРЬ ДО 9
+                if(n>=0 && n<9) selectSlot(n);
             }
         }
 
@@ -447,7 +495,6 @@
             const minZ = pos.z - r, maxZ = pos.z + r; 
             const minY = pos.y - EYE + 0.2; 
             const maxY = pos.y + (P_H - EYE);
-            
             for(let y = Math.round(minY); y <= Math.round(maxY); y++) {
                 for(let z = Math.round(minZ); z <= Math.round(maxZ); z++) {
                     for(let x = Math.round(minX); x <= Math.round(maxX); x++) {
@@ -463,6 +510,10 @@
         function animate() {
             requestAnimationFrame(animate); if(!isGameRunning || isPaused) return;
             const t = performance.now(), d = Math.min((t-prevTime)/1000, 0.05);
+            
+            // ОБНОВЛЕНИЕ ТНТ
+            updatePrimedTNTs(t);
+
             velocity.y -= GRAVITY * d;
             const fwd = Number(moveF) - Number(moveB); const right = Number(moveR) - Number(moveL);
             if(fwd !== 0 || right !== 0) {
@@ -518,17 +569,15 @@
             prevTime = t; renderer.render(scene, camera);
         }
 
-        // --- ОБНОВЛЕННЫЕ UI ФУНКЦИИ (ДЛЯ 9 СЛОТОВ) ---
         function initUI() {
             const g = document.getElementById('creative-grid');
             texUrls.forEach((u,i) => { const d = document.createElement('div'); d.className='inv-slot'; d.style.backgroundImage=`url(${u})`; d.onclick = () => { holdBlock = i; updCur(u); }; g.appendChild(d); });
-            // Обработчики для 9 слотов
             for(let i=0; i<9; i++) document.getElementById(`slot-${i}`).onclick = () => { if(isInvOpen && holdBlock!==null) { hotbar[i]=holdBlock; updHot(); holdBlock=null; updCur(null); } };
         }
         function updCur(u) { const c=document.getElementById('cursor-item'); if(u){c.style.display='block';c.style.backgroundImage=`url(${u})`;}else c.style.display='none'; }
         function updHot() { for(let i=0;i<9;i++) { const s=document.getElementById(`slot-${i}`); s.style.backgroundImage = hotbar[i]!==null ? `url(${texUrls[hotbar[i]]})` : 'none'; } }
         function selectSlot(n) { selSlot=n; document.querySelectorAll('.slot').forEach(e=>e.classList.remove('active')); document.getElementById(`slot-${n}`).classList.add('active'); }
-        function onWheel(e) { if(isPaused)return; if(e.deltaY>0){let s=selSlot+1;if(s>8)s=0;selectSlot(s);}else{let s=selSlot-1;if(s<0)s=8;selectSlot(s);} } // КОЛЕСИКО 0-8
+        function onWheel(e) { if(isPaused)return; if(e.deltaY>0){let s=selSlot+1;if(s>8)s=0;selectSlot(s);}else{let s=selSlot-1;if(s<0)s=8;selectSlot(s);} }
         function onMove(e) { if(isInvOpen && holdBlock!==null) { const c=document.getElementById('cursor-item'); c.style.left=e.clientX+'px'; c.style.top=e.clientY+'px'; } }
     </script>
 </body>
