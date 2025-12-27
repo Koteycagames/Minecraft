@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: FIXED PHYSICS</title>
+    <title>Minecraft JS: Final Fix</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         :root { --mc-btn-bg: #777; --mc-btn-border-light: #aaa; --mc-btn-border-dark: #555; }
@@ -176,7 +176,6 @@
         import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get, query, orderByChild, equalTo } from "firebase-database";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut } from "firebase-auth";
 
-        // --- CONFIG ---
         const firebaseConfig = {
           apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI",
           authDomain: "minecraft-2ec53.firebaseapp.com",
@@ -189,7 +188,7 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        // --- VARIABLES ---
+        // --- GLOBAL VARIABLES ---
         let isRegisterMode = false, currentUser = null, statusRef = null, heartbeatInterval = null;
         let camera, scene, renderer, controls;
         const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
@@ -202,19 +201,27 @@
         let settings = { sensitivity: 0.5, renderDist: 60 };
         let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
         
-        // --- REALISTIC SPEED SETTINGS (NO MORE FLASH) ---
-        const WALK_SPEED = 5.0; // Было 30.0 (Слишком быстро)
-        const SPRINT_SPEED = 8.0; // Было 50.0
-        const CROUCH_SPEED = 3.0; // Было 10.0
+        // --- PHYSICS CONSTANTS ---
+        const WALK_SPEED = 5.0; 
+        const SPRINT_SPEED = 8.0; 
+        const CROUCH_SPEED = 3.0; 
         const JUMP_FORCE = 9; 
         const GRAVITY = 24.0;
         
         const PLAYER_WIDTH = 0.6; const PLAYER_HEIGHT = 1.8; const EYE_HEIGHT = 1.6;
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+        
+        // --- TEXTURES (UPDATED) ---
         let materials = [];
-        const textureUrls = ['./textures/grass.png', './textures/dirt.png', './textures/bricks.png', './textures/obsidian.png', './textures/iron.png'];
+        const textureUrls = [
+            './textures/grass.png',    // 0
+            './textures/dirt.png',     // 1
+            './textures/stone.png',    // 2 (STONE)
+            './textures/obsidian.png', // 3
+            './textures/iron.png'      // 4
+        ];
 
-        // --- AUTH ---
+        // --- AUTH FUNCTIONS (Global) ---
         window.toggleAuthMode = () => { isRegisterMode=!isRegisterMode; document.getElementById('auth-title').innerText=isRegisterMode?"РЕГИСТРАЦИЯ":"ВХОД"; document.getElementById('btn-auth-action').innerText=isRegisterMode?"СОЗДАТЬ АККАУНТ":"ВОЙТИ"; document.getElementById('auth-toggle').innerText=isRegisterMode?"Уже есть аккаунт? Войти":"Нет аккаунта? Зарегистрироваться"; document.getElementById('auth-nick').style.display=isRegisterMode?"block":"none"; };
         window.handleAuth = () => {
             const e=document.getElementById('auth-email').value, p=document.getElementById('auth-pass').value, n=document.getElementById('auth-nick').value, err=document.getElementById('auth-error');
@@ -226,6 +233,7 @@
         window.forceLogout = () => { signOut(auth); location.reload(); };
         function startHeartbeat(){ if(heartbeatInterval)clearInterval(heartbeatInterval); if(statusRef)set(statusRef,{state:'online',last_seen:Date.now()}); heartbeatInterval=setInterval(()=>{if(currentUser&&statusRef){set(ref(db,`status/${currentUser.uid}/last_seen`),Date.now());}},5000); }
         function stopHeartbeat(){ if(heartbeatInterval)clearInterval(heartbeatInterval); }
+        
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 const userStatusRef = ref(db, `status/${user.uid}`);
@@ -254,7 +262,7 @@
         window.saveSettings=()=>{ settings.sensitivity=parseFloat(sS.value); settings.renderDist=parseInt(dS.value); if(controls)controls.pointerSpeed=settings.sensitivity; if(isGameRunning){document.getElementById('screen-settings').style.display='none';document.getElementById('pause-menu').style.display='flex';}else showScreen('screen-main'); };
         window.openSettingsIngame=()=>{document.getElementById('pause-menu').style.display='none';document.getElementById('screen-settings').style.display='flex';};
 
-        // --- LOCAL WORLDS ---
+        // --- WORLDS ---
         function getLocalWorlds() { return JSON.parse(localStorage.getItem('mc_worlds') || '{}'); }
         function saveLocalWorlds(w) { try{localStorage.setItem('mc_worlds', JSON.stringify(w))}catch(e){} }
         window.createLocalWorld=()=>{const n=document.getElementById('new-world-name').value.trim();if(!n)return;const w=getLocalWorlds();if(w[n])return alert("Занято");w[n]={blocks:{}};saveLocalWorlds(w);loadLocalWorld(n);};
@@ -262,7 +270,7 @@
         window.deleteWorld=(n)=>{if(confirm("Удалить?")){const w=getLocalWorlds();delete w[n];saveLocalWorlds(w);renderWorldList();}};
         function loadLocalWorld(n){ currentWorldName=n; isMultiplayer=false; isHost=false; startEngine(); const w=getLocalWorlds()[n].blocks; if(Object.keys(w).length>0) for(let k in w){const[x,y,z]=k.split(',').map(Number);createBlock(x,y,z,materials[w[k]],false);} else generateBasicTerrain(); }
 
-        // --- CLOUD SERVERS ---
+        // --- MULTIPLAYER ---
         window.fetchMyServers=()=>{ if(!currentUser)return; const l=document.getElementById('server-list');l.innerHTML='Загрузка...'; onValue(query(ref(db,'lobbies'),orderByChild('ownerId'),equalTo(currentUser.uid)),(s)=>{l.innerHTML='';if(!s.exists()){l.innerHTML='<div style="padding:10px;color:#aaa">Пусто</div>';return;} s.forEach((c)=>{const code=c.key;const d=document.createElement('div');d.className='list-item';d.innerHTML=`<span>${code}</span><span class="del-btn" onclick="killServer('${code}')">ВЫКЛЮЧИТЬ</span>`;d.onclick=(e)=>{if(!e.target.classList.contains('del-btn'))document.getElementById('lobby-code-input').value=code};l.appendChild(d)});},{onlyOnce:false}); };
         window.createLobby=()=>{const c=Math.floor(1000+Math.random()*9000).toString();isHost=true;set(ref(db,`lobbies/${c}`),{ownerId:currentUser.uid,created:Date.now(),world:{},players:{}}).then(()=>{startMultiplayer(c)});};
         window.killServer=(c)=>{if(confirm("Удалить?"))remove(ref(db,`lobbies/${c}`));};
@@ -289,8 +297,19 @@
         function startEngine(){ document.querySelectorAll('.menu-screen').forEach(el=>el.style.display='none'); document.getElementById('game-ui').style.display='block'; init(); controls.pointerSpeed=settings.sensitivity; scene.fog.far=settings.renderDist; camera.far=settings.renderDist*2; isGameRunning=true; isPaused=false; animate(); setTimeout(()=>{alert("Кликни чтобы играть");},100); }
         window.resumeGame=()=>{document.getElementById('pause-menu').style.display='none';controls.lock();};
         window.quitToTitle=(f=false,m="")=>{ if(lobbyRefCheck)lobbyRefCheck(); if(isMultiplayer&&!f)remove(playerRef); if(!isMultiplayer&&currentWorldName&&!f){const w=getLocalWorlds();const b={};for(let k in worldData){if(objectsMap[k])b[k]=materials.indexOf(objectsMap[k].material);}w[currentWorldName].blocks=b;saveLocalWorlds(w);} if(f)alert(m); location.reload(); };
-        // INCREASED GENERATION DEPTH to avoid falling through
-        function generateBasicTerrain(){ const R=12; for(let y=-20; y<0; y++)for(let x=-R; x<R; x++)for(let z=-R; z<R; z++)createBlock(x,y,z,materials[1]); for(let x=-R; x<R; x++)for(let z=-R; z<R; z++)createBlock(x,0,z,materials[0]); }
+        
+        // --- LAYERS GENERATION (FIXED) ---
+        function generateBasicTerrain() {
+            const R = 12;
+            for (let x = -R; x < R; x++) {
+                for (let z = -R; z < R; z++) {
+                    createBlock(x, 0, z, materials[0]); // GRASS
+                    for(let y=-1; y>=-4; y--) createBlock(x, y, z, materials[1]); // DIRT (4 layers)
+                    for(let y=-5; y>=-9; y--) createBlock(x, y, z, materials[2]); // STONE (5 layers)
+                    createBlock(x, -10, z, materials[3]); // OBSIDIAN (1 layer)
+                }
+            }
+        }
 
         function init(){
             scene=new THREE.Scene();scene.background=new THREE.Color(0x87CEEB);scene.fog=new THREE.Fog(0x87CEEB,10,60);
@@ -316,7 +335,6 @@
         function selectSlot(i){selectedSlot=i;document.querySelectorAll('.slot').forEach(e=>e.classList.remove('active'));document.getElementById(`slot-${i}`).classList.add('active');}
         function onRez(){camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);}
 
-        // --- BLOCK LOGIC ---
         function getKey(x,y,z){return `${x},${y},${z}`;}
         function hasBlock(x,y,z){return worldData[getKey(Math.round(x),Math.round(y),Math.round(z))];}
         function createBlock(x,y,z,m,net=false){const o=new THREE.Mesh(cubeGeo,m);o.position.set(x,y,z);scene.add(o);objects.push(o);const k=getKey(x,y,z);worldData[k]=true;objectsMap[k]=o;if(isMultiplayer&&!net)set(ref(db,`lobbies/${currentLobbyId}/world/${x}_${y}_${z}`),materials.indexOf(m));}
@@ -332,27 +350,22 @@
             }
         }
 
-        // --- ENTITIES ---
         function createOtherPlayer(id,data){const g=new THREE.BoxGeometry(0.6,1.8,0.6);const m=new THREE.MeshLambertMaterial({color:0xff0000});const mesh=new THREE.Mesh(g,m);const hg=new THREE.BoxGeometry(0.4,0.4,0.4);const hm=new THREE.MeshLambertMaterial({color:0xffccaa});const head=new THREE.Mesh(hg,hm);head.position.y=0.9;mesh.add(head);if(data.nick){const c=document.createElement('canvas');const ctx=c.getContext('2d');c.width=256;c.height=64;ctx.fillStyle="rgba(0,0,0,0.5)";ctx.fillRect(0,0,256,64);ctx.fillStyle="white";ctx.font="30px Arial";ctx.textAlign="center";ctx.fillText(data.nick,128,42);const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));s.position.y=1.6;s.scale.set(2,0.5,1);mesh.add(s);}mesh.position.set(data.x,data.y-0.9,data.z);scene.add(mesh);otherPlayers[id]={mesh};}
         function updateOtherPlayer(id,data){const p=otherPlayers[id];p.mesh.position.set(data.x,data.y-0.9,data.z);p.mesh.rotation.y=data.rotation;}
         function uploadPos(){if(isMultiplayer&&playerRef)set(playerRef,{x:camera.position.x,y:camera.position.y,z:camera.position.z,rotation:camera.rotation.y,nick:currentUser.displayName});}
 
-        // --- PHYSICS (SOLID + CORRECT CAMERA MOVEMENT) ---
         function resolveCollision(newPos) {
             const radius = PLAYER_WIDTH / 2;
             let minX = newPos.x - radius; let maxX = newPos.x + radius;
             let minY = newPos.y - EYE_HEIGHT; let maxY = newPos.y + (PLAYER_HEIGHT - EYE_HEIGHT);
             let minZ = newPos.z - radius; let maxZ = newPos.z + radius;
-
             const startX = Math.floor(minX), endX = Math.floor(maxX);
             const startY = Math.floor(minY), endY = Math.floor(maxY);
             const startZ = Math.floor(minZ), endZ = Math.floor(maxZ);
-
             for (let y = startY; y <= endY; y++) {
                 for (let z = startZ; z <= endZ; z++) {
                     for (let x = startX; x <= endX; x++) {
                         if (hasBlock(x, y, z)) {
-                            // AABB Block
                             const bMinX = x - 0.5, bMaxX = x + 0.5;
                             const bMinY = y - 0.5, bMaxY = y + 0.5;
                             const bMinZ = z - 0.5, bMaxZ = z + 0.5;
@@ -369,53 +382,32 @@
             const t=performance.now(), d=Math.min((t-prevTime)/1000,0.05);
             let sim=false; if(isMultiplayer)sim=true; else if(!isPaused&&!isInventoryOpen&&controls.isLocked)sim=true;
             if(sim) {
-                // Gravity
                 velocity.y -= GRAVITY * d;
-
-                // MOVEMENT FIXED: Relative to Camera
                 if((isMultiplayer&&controls.isLocked&&!isInventoryOpen)||(!isMultiplayer&&sim)) {
                     const fwd = Number(moveForward) - Number(moveBackward);
                     const right = Number(moveRight) - Number(moveLeft);
-
                     if (fwd !== 0 || right !== 0) {
                         const front = new THREE.Vector3();
                         camera.getWorldDirection(front);
                         front.y = 0; front.normalize();
                         const side = new THREE.Vector3();
-                        side.crossVectors(camera.up, front).normalize();
-
+                        // FIX: Correct cross product order for Right vector
+                        side.crossVectors(front, camera.up).normalize(); 
                         const moveDir = new THREE.Vector3();
                         moveDir.addScaledVector(front, fwd);
                         moveDir.addScaledVector(side, right);
                         moveDir.normalize();
-
                         let spd=isCrouching?CROUCH_SPEED:(isSprinting?SPRINT_SPEED:WALK_SPEED);
                         velocity.x += moveDir.x * spd * d * 10;
                         velocity.z += moveDir.z * spd * d * 10;
                     }
                 }
-                
-                // Friction
-                velocity.x -= velocity.x * 10.0 * d;
-                velocity.z -= velocity.z * 10.0 * d;
-
-                // Physics Steps
+                velocity.x -= velocity.x * 10.0 * d; velocity.z -= velocity.z * 10.0 * d;
                 const pos = camera.position.clone();
-                
-                pos.x += velocity.x * d;
-                if (resolveCollision(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
-                
-                pos.z += velocity.z * d;
-                if (resolveCollision(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
-                
-                pos.y += velocity.y * d;
-                if (resolveCollision(pos)) {
-                    const wasFalling = velocity.y < 0;
-                    pos.y -= velocity.y * d; velocity.y = 0;
-                    if (wasFalling) canJump = true;
-                }
+                pos.x += velocity.x * d; if (resolveCollision(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
+                pos.z += velocity.z * d; if (resolveCollision(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
+                pos.y += velocity.y * d; if (resolveCollision(pos)) { const wasFalling = velocity.y < 0; pos.y -= velocity.y * d; velocity.y = 0; if (wasFalling) canJump = true; }
                 camera.position.copy(pos);
-
                 if(camera.position.y < -30) { camera.position.set(0,20,0); velocity.y=0; }
                 if(isMultiplayer && t-lastUploadTime>150) { uploadPos(); lastUploadTime=t; }
             }
