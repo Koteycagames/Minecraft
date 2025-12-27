@@ -2,22 +2,33 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: COLLISION FIX</title>
+    <title>Minecraft JS: TNT UPDATE</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; background: #000; }
         
         #game-ui { display: none; }
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); z-index: 10; pointer-events: none; }
-        #hotbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 10px; z-index: 150; }
-        .slot { width: 60px; height: 60px; border: 4px solid #555; background-color: rgba(0,0,0,0.4); background-size: cover; cursor: pointer; }
+        
+        /* ОБНОВЛЕННЫЙ ХОТБАР НА 9 СЛОТОВ */
+        #hotbar { 
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); 
+            display: flex; gap: 5px; /* Чуть меньше зазор */
+            background: rgba(0,0,0,0.5); padding: 5px; border-radius: 5px; z-index: 150; 
+        }
+        .slot { 
+            width: 50px; height: 50px; /* Чуть меньше слот, чтобы все влезло */
+            border: 3px solid #555; background-color: rgba(0,0,0,0.4); 
+            background-size: cover; cursor: pointer; 
+        }
         .slot.active { border-color: white; transform: scale(1.1); background-color: rgba(255,255,255,0.1); }
+        
         #info-panel { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.5); padding: 10px; pointer-events: none; font-weight: bold; }
 
         .overlay-menu { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
         .mc-btn { width: 300px; padding: 15px; margin: 10px; font-size: 20px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; text-shadow: 2px 2px #000; }
         .mc-btn:hover { background: #888; color: white; border-color: #777; }
         
-        .inv-grid { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 400px; }
+        .inv-grid { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 500px; } /* Шире для новых блоков */
         .inv-slot { width: 50px; height: 50px; border: 2px solid #888; background: #8b8b8b; cursor: pointer; background-size: cover; }
         #cursor-item { position: absolute; width: 40px; height: 40px; pointer-events: none; z-index: 200; background-size: cover; display: none; border: 2px solid yellow; }
 
@@ -43,7 +54,13 @@
     <div id="game-ui">
         <div id="crosshair"></div>
         <div id="info-panel">Инициализация...</div>
-        <div id="hotbar"><div class="slot active" id="slot-0"></div><div class="slot" id="slot-1"></div><div class="slot" id="slot-2"></div><div class="slot" id="slot-3"></div><div class="slot" id="slot-4"></div></div>
+        <div id="hotbar">
+            <div class="slot active" id="slot-0"></div><div class="slot" id="slot-1"></div>
+            <div class="slot" id="slot-2"></div><div class="slot" id="slot-3"></div>
+            <div class="slot" id="slot-4"></div><div class="slot" id="slot-5"></div>
+            <div class="slot" id="slot-6"></div><div class="slot" id="slot-7"></div>
+            <div class="slot" id="slot-8"></div>
+        </div>
     </div>
 
     <div id="pause-menu" class="overlay-menu">
@@ -102,13 +119,29 @@
         const velocity = new THREE.Vector3();
         let prevTime = performance.now(), lastUploadTime = 0;
         
-        // P_W=0.5 (Худой Стив, чтобы не застревать)
         const WALK=5.0, SPRINT=8.0, CROUCH=3.0, JUMP=9, GRAVITY=24.0, P_W=0.5, P_H=1.8, EYE=1.6;
         
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
-        const texUrls = ['./textures/grass.png', './textures/dirt.png', './textures/stone.png', './textures/obsidian.png', './textures/iron.png', './textures/log.png', './textures/planks.png', './textures/brick.png', './textures/sand.png', './textures/diamond.png'];
-        let hotbar = [null,null,null,null,null], selSlot=0, holdBlock=null;
+        
+        // --- ОБНОВЛЕННЫЙ СПИСОК (TNT = 10, ЗАЖИГАЛКА = 11) ---
+        const texUrls = [
+            './textures/grass.png',    // 0
+            './textures/dirt.png',     // 1
+            './textures/stone.png',    // 2
+            './textures/obsidian.png', // 3
+            './textures/iron.png',     // 4
+            './textures/log.png',      // 5
+            './textures/planks.png',   // 6
+            './textures/brick.png',    // 7
+            './textures/sand.png',     // 8
+            './textures/diamond.png',  // 9
+            './textures/tnt.png',      // 10: ДИНАМИТ
+            './textures/flint.png'     // 11: ЗАЖИГАЛКА
+        ];
+        
+        // Хотбар теперь на 9 слотов
+        let hotbar = [null,null,null,null,null,null,null,null,null], selSlot=0, holdBlock=null;
 
         if(MODE === 'multi') {
             onAuthStateChanged(auth, user => {
@@ -272,34 +305,81 @@
             delete worldData[k]; delete objectsMap[k];
         }
 
+        // --- ЛОГИКА ВЗРЫВА ---
+        function explode(cx, cy, cz) {
+            const R = 4; // Радиус взрыва
+            // Удаляем блоки
+            for(let x = cx - R; x <= cx + R; x++) {
+                for(let y = cy - R; y <= cy + R; y++) {
+                    for(let z = cz - R; z <= cz + R; z++) {
+                        if(Math.sqrt((x-cx)**2 + (y-cy)**2 + (z-cz)**2) <= R) {
+                            if(hasBlock(x,y,z)) {
+                                const obj = objectsMap[`${x},${y},${z}`];
+                                removeBlockLocal(obj);
+                                if(MODE === 'multi') set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Отбрасываем игрока (физика)
+            const dist = camera.position.distanceTo(new THREE.Vector3(cx, cy, cz));
+            if(dist < R + 2) {
+                // Вектор от взрыва к игроку
+                const dir = new THREE.Vector3().subVectors(camera.position, new THREE.Vector3(cx, cy, cz)).normalize();
+                const force = (R + 2 - dist) * 1.5; // Чем ближе, тем сильнее
+                velocity.addScaledVector(dir, force * 15);
+                velocity.y += force * 5; // Подбрасываем вверх
+            }
+        }
+
         function onClick(e) {
             if(isPaused || isInvOpen || !controls || !controls.isLocked) return;
             raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
             const i = raycaster.intersectObjects(objects);
+            
             if(i.length > 0 && i[0].distance <= 5) {
-                if(e.button === 0) {
-                    const obj = i[0].object;
-                    const x = Math.round(obj.position.x), y = Math.round(obj.position.y), z = Math.round(obj.position.z);
-                    removeBlockLocal(obj);
-                    if(MODE === 'multi') set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
-                } else if(e.button === 2) {
-                    const m = hotbar[selSlot]; if(m===null) return;
+                const obj = i[0].object;
+                const bx = Math.round(obj.position.x), by = Math.round(obj.position.y), bz = Math.round(obj.position.z);
+                const heldItem = hotbar[selSlot];
+
+                if(e.button === 2) { // ПКМ (Взаимодействие / Установка)
+                    
+                    // ЕСЛИ У НАС В РУКАХ ЗАЖИГАЛКА (ID 11)
+                    if(heldItem === 11) {
+                        // Проверяем, кликнули ли мы по TNT (ID 10)
+                        // Тут хитрость: нам нужно узнать материал блока.
+                        const matIndex = materials.indexOf(obj.material);
+                        if(matIndex === 10) {
+                            // ПОДЖИГАЕМ!
+                            // Для простоты - взрыв через таймер
+                            // Можно добавить мигание, но пока просто удалим блок и через 2 сек БУМ
+                            removeBlockLocal(obj); // TNT исчезает
+                            setTimeout(() => explode(bx, by, bz), 2000); // БУМ через 2 сек
+                            return; // Больше ничего не делаем
+                        }
+                        return; // Зажигалкой строить нельзя
+                    }
+
+                    // ОБЫЧНАЯ СТРОЙКА
+                    if(heldItem === null) return;
+                    
                     const p = i[0].object.position.clone().add(i[0].face.normal);
                     
-                    // --- НОВАЯ ПРОВЕРКА КОЛЛИЗИИ (ЧЕСТНАЯ) ---
-                    // Создаем ящик игрока
+                    // Проверка коллизии
                     const playerBox = new THREE.Box3().setFromCenterAndSize(
-                        new THREE.Vector3(camera.position.x, camera.position.y - (P_H/2) + 0.2, camera.position.z), // +0.2 чтобы не считать голову как "ноги"
-                        new THREE.Vector3(P_W, P_H - 0.2, P_W) // Чуть уменьшаем высоту
+                        new THREE.Vector3(camera.position.x, camera.position.y - (P_H/2) + 0.2, camera.position.z), 
+                        new THREE.Vector3(P_W, P_H - 0.2, P_W)
                     );
-                    
-                    // Создаем ящик нового блока
                     const blockBox = new THREE.Box3().setFromCenterAndSize(p, new THREE.Vector3(1, 1, 1));
-
-                    // Если пересекаются - строить нельзя
                     if (playerBox.intersectsBox(blockBox)) return; 
 
-                    createBlock(p.x, p.y, p.z, materials[m]);
+                    createBlock(p.x, p.y, p.z, materials[heldItem]);
+
+                } else if(e.button === 0) { // ЛКМ (Ломать)
+                    removeBlockLocal(obj);
+                    if(MODE === 'multi') set(ref(db, `lobbies/${LOBBY_ID}/world/${bx}_${by}_${bz}`), 99);
                 }
             }
         }
@@ -344,6 +424,7 @@
             localStorage.setItem('mc_worlds', JSON.stringify(worlds));
         }
 
+        // --- УПРАВЛЕНИЕ ХОТБАРОМ (1-9) ---
         function onKey(e) {
             const down = e.type === 'keydown';
             if(e.code === 'KeyW') moveF = down; if(e.code === 'KeyS') moveB = down;
@@ -354,14 +435,17 @@
                 if(isInvOpen) { isInvOpen = false; document.getElementById('inventory-screen').style.display='none'; if(controls) controls.lock(); }
                 else { isInvOpen = true; document.getElementById('inventory-screen').style.display='flex'; if(controls) controls.unlock(); }
             }
-            if(down && e.code.startsWith('Digit')) { const n = parseInt(e.code.slice(5))-1; if(n>=0 && n<5) selectSlot(n); }
+            if(down && e.code.startsWith('Digit')) { 
+                const n = parseInt(e.code.slice(5))-1; 
+                if(n>=0 && n<9) selectSlot(n); // ТЕПЕРЬ ДО 9
+            }
         }
 
         function resolveCol(pos) {
             const r = P_W / 2; 
             const minX = pos.x - r, maxX = pos.x + r; 
             const minZ = pos.z - r, maxZ = pos.z + r; 
-            const minY = pos.y - EYE + 0.2; // Тут +0.2 чтобы не застревать на полу
+            const minY = pos.y - EYE + 0.2; 
             const maxY = pos.y + (P_H - EYE);
             
             for(let y = Math.round(minY); y <= Math.round(maxY); y++) {
@@ -391,20 +475,14 @@
             velocity.x -= velocity.x * 10.0 * d; velocity.z -= velocity.z * 10.0 * d;
             const pos = camera.position.clone();
             
-            // X & Z checks with offset
-            pos.x += velocity.x * d; 
-            if(resolveCol(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
-            
-            pos.z += velocity.z * d; 
-            if(resolveCol(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
-            
-            // Y check (Strict, for landing)
+            pos.x += velocity.x * d; if(resolveCol(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
+            pos.z += velocity.z * d; if(resolveCol(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
             pos.y += velocity.y * d; 
             
             const r = P_W / 2; 
             const minX = pos.x - r, maxX = pos.x + r; 
             const minZ = pos.z - r, maxZ = pos.z + r; 
-            const minY = pos.y - EYE; // Strict floor check
+            const minY = pos.y - EYE; 
             const maxY = pos.y + (P_H - EYE);
             let colY = false;
             for(let y = Math.round(minY); y <= Math.round(maxY); y++) {
@@ -440,15 +518,17 @@
             prevTime = t; renderer.render(scene, camera);
         }
 
+        // --- ОБНОВЛЕННЫЕ UI ФУНКЦИИ (ДЛЯ 9 СЛОТОВ) ---
         function initUI() {
             const g = document.getElementById('creative-grid');
             texUrls.forEach((u,i) => { const d = document.createElement('div'); d.className='inv-slot'; d.style.backgroundImage=`url(${u})`; d.onclick = () => { holdBlock = i; updCur(u); }; g.appendChild(d); });
-            for(let i=0; i<5; i++) document.getElementById(`slot-${i}`).onclick = () => { if(isInvOpen && holdBlock!==null) { hotbar[i]=holdBlock; updHot(); holdBlock=null; updCur(null); } };
+            // Обработчики для 9 слотов
+            for(let i=0; i<9; i++) document.getElementById(`slot-${i}`).onclick = () => { if(isInvOpen && holdBlock!==null) { hotbar[i]=holdBlock; updHot(); holdBlock=null; updCur(null); } };
         }
         function updCur(u) { const c=document.getElementById('cursor-item'); if(u){c.style.display='block';c.style.backgroundImage=`url(${u})`;}else c.style.display='none'; }
-        function updHot() { for(let i=0;i<5;i++) { const s=document.getElementById(`slot-${i}`); s.style.backgroundImage = hotbar[i]!==null ? `url(${texUrls[hotbar[i]]})` : 'none'; } }
+        function updHot() { for(let i=0;i<9;i++) { const s=document.getElementById(`slot-${i}`); s.style.backgroundImage = hotbar[i]!==null ? `url(${texUrls[hotbar[i]]})` : 'none'; } }
         function selectSlot(n) { selSlot=n; document.querySelectorAll('.slot').forEach(e=>e.classList.remove('active')); document.getElementById(`slot-${n}`).classList.add('active'); }
-        function onWheel(e) { if(isPaused)return; if(e.deltaY>0){let s=selSlot+1;if(s>4)s=0;selectSlot(s);}else{let s=selSlot-1;if(s<0)s=4;selectSlot(s);} }
+        function onWheel(e) { if(isPaused)return; if(e.deltaY>0){let s=selSlot+1;if(s>8)s=0;selectSlot(s);}else{let s=selSlot-1;if(s<0)s=8;selectSlot(s);} } // КОЛЕСИКО 0-8
         function onMove(e) { if(isInvOpen && holdBlock!==null) { const c=document.getElementById('cursor-item'); c.style.left=e.clientX+'px'; c.style.top=e.clientY+'px'; } }
     </script>
 </body>
