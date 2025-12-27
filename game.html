@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: GAME</title>
+    <title>Minecraft JS: SMOOTH GAME</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); z-index: 10; pointer-events: none; }
@@ -43,7 +43,8 @@
     <div id="screen-blocked">
         <h1 style="font-size:80px">⛔</h1>
         <h2 style="color:white">ОШИБКА ДОСТУПА / АНТИЧИТ</h2>
-        <button class="mc-btn" onclick="location.href='index.html'">В МЕНЮ</button> </div>
+        <button class="mc-btn" onclick="location.href='index.html'">В МЕНЮ</button>
+    </div>
 
     <script type="importmap">
         {
@@ -98,7 +99,7 @@
                     currentUser = user;
                     checkAntiCheatAndStart();
                 } else {
-                    window.location.href = 'index.html'; // Исправлено
+                    window.location.href = 'index.html';
                 }
             });
         } else {
@@ -118,7 +119,6 @@
                     set(statusRef, {state: 'online', last_seen: Date.now()});
                     onDisconnect(statusRef).set({state: 'offline'});
                     setInterval(() => set(ref(db, `status/${currentUser.uid}/last_seen`), Date.now()), 5000);
-                    
                     startEngine();
                     connectToLobby();
                 }
@@ -128,6 +128,7 @@
         function connectToLobby() {
             document.getElementById('info-panel').innerText = `Сервер: ${LOBBY_ID}`;
             onValue(ref(db, `lobbies/${LOBBY_ID}`), s => { if(!s.exists()) quit(true, "Сервер выключен"); });
+            
             playerRef = ref(db, `lobbies/${LOBBY_ID}/players/${currentUser.uid}`);
             onDisconnect(playerRef).remove();
             set(playerRef, { x:0, y:20, z:0, rotation:0, nick: currentUser.displayName });
@@ -150,7 +151,7 @@
             setTimeout(() => { if(Object.keys(worldData).length === 0) genTerrain(); }, 2000);
         }
 
-        // --- SINGLEPLAYER LOGIC ---
+        // --- SINGLEPLAYER ---
         function loadLocalWorld() {
             document.getElementById('info-panel').innerText = `Мир: ${WORLD_NAME}`;
             const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
@@ -170,11 +171,7 @@
         }
 
         // --- ENGINE ---
-        function startEngine() {
-            init3D();
-            isGameRunning = true;
-            animate();
-        }
+        function startEngine() { init3D(); isGameRunning = true; animate(); }
 
         function init3D() {
             scene = new THREE.Scene(); scene.background = new THREE.Color(0x87CEEB); scene.fog = new THREE.Fog(0x87CEEB, 10, SETTINGS.dist);
@@ -209,7 +206,7 @@
             if(MODE === 'multi' && playerRef) remove(playerRef);
             if(statusRef) set(statusRef, {state: 'offline'}); 
             if(forced) alert(msg);
-            window.location.href = 'index.html'; // Исправлено
+            window.location.href = 'index.html';
         };
 
         function genTerrain() {
@@ -222,16 +219,13 @@
             }
         }
 
-        // --- BLOCK LOGIC ---
         function getKey(x,y,z){return `${x},${y},${z}`;}
         function hasBlock(x,y,z){return worldData[getKey(Math.round(x),Math.round(y),Math.round(z))];}
-        
         function createBlock(x,y,z,m,net=false) {
             const o = new THREE.Mesh(cubeGeo, m); o.position.set(x,y,z); scene.add(o); objects.push(o);
             const k = getKey(x,y,z); worldData[k]=true; objectsMap[k]=o;
             if(MODE === 'multi' && !net) set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), materials.indexOf(m));
         }
-        
         function removeBlockLocal(o) {
             scene.remove(o); objects.splice(objects.indexOf(o),1);
             const k = getKey(Math.round(o.position.x), Math.round(o.position.y), Math.round(o.position.z));
@@ -255,6 +249,7 @@
             }
         }
 
+        // --- ENTITIES & SMOOTHING ---
         function spawnPlayer(id, data) {
             const g = new THREE.BoxGeometry(0.6, 1.8, 0.6); const m = new THREE.MeshLambertMaterial({color:0xff0000});
             const mesh = new THREE.Mesh(g, m);
@@ -263,10 +258,22 @@
                 x.fillStyle="rgba(0,0,0,0.5)"; x.fillRect(0,0,256,64); x.fillStyle="white"; x.font="30px Arial"; x.textAlign="center"; x.fillText(data.nick,128,42);
                 const s = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)})); s.position.y=1.6; s.scale.set(2,0.5,1); mesh.add(s);
             }
-            mesh.position.set(data.x, data.y-0.9, data.z); scene.add(mesh); otherPlayers[id] = {mesh};
+            mesh.position.set(data.x, data.y-0.9, data.z); 
+            scene.add(mesh); 
+            // SMOOTH INIT
+            otherPlayers[id] = {
+                mesh: mesh,
+                targetPos: new THREE.Vector3(data.x, data.y-0.9, data.z),
+                targetRot: data.rotation
+            };
         }
+
         function movePlayer(id, data) {
-            const p = otherPlayers[id]; if(p) { p.mesh.position.set(data.x, data.y-0.9, data.z); p.mesh.rotation.y = data.rotation; }
+            // SMOOTH UPDATE: Just update target, don't move mesh
+            if(otherPlayers[id]) {
+                otherPlayers[id].targetPos.set(data.x, data.y-0.9, data.z);
+                otherPlayers[id].targetRot = data.rotation;
+            }
         }
 
         function onKey(e) {
@@ -324,6 +331,15 @@
             }
             camera.position.copy(pos);
             if(camera.position.y < -30) { camera.position.set(0,30,0); velocity.y=0; }
+
+            // --- SMOOTH OTHER PLAYERS (LERP) ---
+            for (let id in otherPlayers) {
+                const p = otherPlayers[id];
+                // Плавно двигаем к цели (0.3 - скорость сглаживания)
+                p.mesh.position.lerp(p.targetPos, 0.3);
+                // Плавно вращаем (простая линейная интерполяция для угла)
+                p.mesh.rotation.y += (p.targetRot - p.mesh.rotation.y) * 0.3;
+            }
 
             if(MODE === 'multi' && t - lastUploadTime > 150) {
                 if(playerRef) set(playerRef, {x:camera.position.x, y:camera.position.y, z:camera.position.z, rotation:camera.rotation.y, nick:currentUser.displayName});
