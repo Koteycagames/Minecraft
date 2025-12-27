@@ -2,46 +2,82 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Настройки</title>
+    <title>Minecraft JS: Main Menu</title>
     <style>
         body { margin: 0; font-family: 'Courier New', monospace; background: url('./textures/dirt.png'); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: white; }
-        body::before { content: ""; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); z-index: -1; }
-        h1 { font-size: 40px; margin-bottom: 30px; text-shadow: 2px 2px #000; }
-        .row { margin: 15px; text-align: center; }
-        input[type=range] { width: 300px; }
-        .mc-btn { width: 300px; padding: 15px; margin-top: 30px; font-size: 20px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; }
+        body::before { content: ""; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: -1; }
+        h1 { font-size: 60px; text-shadow: 4px 4px #000; margin-bottom: 20px; }
+        .mc-btn { width: 300px; padding: 15px; margin: 10px; font-size: 20px; color: #ddd; background: #777; border: 4px solid; border-color: #aaa #555 #555 #aaa; cursor: pointer; }
+        .mc-btn:hover { background: #888; color: #fff; }
+        .mc-input { padding: 10px; width: 280px; margin: 5px; background: #000; border: 2px solid #aaa; color: white; font-size: 16px; }
+        #auth-panel { background: rgba(0,0,0,0.5); padding: 20px; border: 2px solid #555; display: flex; flex-direction: column; align-items: center; }
+        #user-panel { display: none; text-align: center; }
+        .link { color: #aaa; text-decoration: underline; cursor: pointer; margin-top: 10px; font-size: 14px; }
     </style>
 </head>
 <body>
-    <h1>НАСТРОЙКИ</h1>
-    <div class="row">
-        <label>Чувствительность мыши: <span id="sens-val">0.5</span></label><br>
-        <input type="range" min="0.1" max="2.0" step="0.1" value="0.5" id="sens">
+    <h1>MINECRAFT JS</h1>
+
+    <div id="auth-panel">
+        <h2 id="auth-title">ВХОД</h2>
+        <input type="email" id="email" class="mc-input" placeholder="Email">
+        <input type="password" id="pass" class="mc-input" placeholder="Пароль">
+        <input type="text" id="nick" class="mc-input" placeholder="Никнейм" style="display:none;">
+        <button class="mc-btn" onclick="handleAuth()" id="auth-btn">ВОЙТИ</button>
+        <div class="link" onclick="toggleAuth()">Нет аккаунта? Регистрация</div>
     </div>
-    <div class="row">
-        <label>Дальность прорисовки: <span id="dist-val">60</span></label><br>
-        <input type="range" min="20" max="150" step="10" value="60" id="dist">
+
+    <div id="user-panel">
+        <h3>Привет, <span id="username" style="color:yellow">Стив</span>!</h3>
+        <button class="mc-btn" onclick="window.location.href='worldselect.html'">ОДИНОЧНАЯ ИГРА</button>
+        <button class="mc-btn" onclick="window.location.href='multiplayer.html'">СЕТЕВАЯ ИГРА</button>
+        <button class="mc-btn" onclick="window.location.href='settings.html'">НАСТРОЙКИ</button>
+        <button class="mc-btn" onclick="logout()" style="background:#533;">ВЫЙТИ</button>
     </div>
-    <button class="mc-btn" onclick="save()">ГОТОВО</button>
 
-    <script>
-        const conf = JSON.parse(localStorage.getItem('mc_settings') || '{"sens":0.5, "dist":60}');
-        document.getElementById('sens').value = conf.sens;
-        document.getElementById('dist').value = conf.dist;
-        document.getElementById('sens-val').innerText = conf.sens;
-        document.getElementById('dist-val').innerText = conf.dist;
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-        document.getElementById('sens').oninput = (e) => document.getElementById('sens-val').innerText = e.target.value;
-        document.getElementById('dist').oninput = (e) => document.getElementById('dist-val').innerText = e.target.value;
+        const app = initializeApp({ 
+            apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI", 
+            authDomain: "minecraft-2ec53.firebaseapp.com" 
+        });
+        const auth = getAuth(app);
 
-        function save() {
-            const newConf = {
-                sens: parseFloat(document.getElementById('sens').value),
-                dist: parseInt(document.getElementById('dist').value)
-            };
-            localStorage.setItem('mc_settings', JSON.stringify(newConf));
-            window.location.href = 'index.html'; // Исправлено на index.html
-        }
+        let isReg = false;
+        window.toggleAuth = () => {
+            isReg = !isReg;
+            document.getElementById('auth-title').innerText = isReg ? "РЕГИСТРАЦИЯ" : "ВХОД";
+            document.getElementById('auth-btn').innerText = isReg ? "СОЗДАТЬ" : "ВОЙТИ";
+            document.getElementById('nick').style.display = isReg ? "block" : "none";
+        };
+
+        window.handleAuth = () => {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('pass').value;
+            const n = document.getElementById('nick').value;
+            
+            if(isReg) {
+                if(!n) return alert("Введи ник");
+                createUserWithEmailAndPassword(auth, e, p).then(c => updateProfile(c.user, {displayName: n})).catch(e => alert(e.message));
+            } else {
+                signInWithEmailAndPassword(auth, e, p).catch(e => alert("Ошибка входа"));
+            }
+        };
+
+        window.logout = () => signOut(auth);
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                document.getElementById('auth-panel').style.display = 'none';
+                document.getElementById('user-panel').style.display = 'block';
+                document.getElementById('username').innerText = user.displayName;
+            } else {
+                document.getElementById('auth-panel').style.display = 'flex';
+                document.getElementById('user-panel').style.display = 'none';
+            }
+        });
     </script>
 </body>
 </html>
