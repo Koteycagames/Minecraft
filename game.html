@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: New Blocks</title>
+    <title>Minecraft JS: STABLE</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; background: #000; }
         
@@ -102,22 +102,16 @@
         const velocity = new THREE.Vector3();
         let prevTime = performance.now(), lastUploadTime = 0;
         
-        const WALK=5.0, SPRINT=8.0, CROUCH=3.0, JUMP=9, GRAVITY=24.0, P_W=0.9, P_H=1.8, EYE=1.6;
+        // --- ФИКС ФИЗИКИ: P_W (ширина игрока) уменьшена с 0.9 до 0.7 ---
+        const WALK=5.0, SPRINT=8.0, CROUCH=3.0, JUMP=9, GRAVITY=24.0, P_W=0.7, P_H=1.8, EYE=1.6;
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
         
-        // --- НОВЫЙ СПИСОК БЛОКОВ ---
         const texUrls = [
-            './textures/grass.png',    // 0
-            './textures/dirt.png',     // 1
-            './textures/stone.png',    // 2
-            './textures/obsidian.png', // 3
-            './textures/iron.png',     // 4
-            './textures/log.png',      // 5: Бревно
-            './textures/planks.png',   // 6: Доски
-            './textures/brick.png',    // 7: Кирпич
-            './textures/sand.png',     // 8: Песок
-            './textures/diamond.png'   // 9: Алмаз
+            './textures/grass.png', './textures/dirt.png', './textures/stone.png', 
+            './textures/obsidian.png', './textures/iron.png', './textures/log.png', 
+            './textures/planks.png', './textures/brick.png', './textures/sand.png', 
+            './textures/diamond.png'
         ];
         
         let hotbar = [null,null,null,null,null], selSlot=0, holdBlock=null;
@@ -127,11 +121,8 @@
                 if(user) {
                     currentUser = user;
                     get(ref(db, `lobbies/${LOBBY_ID}/banned/${currentUser.uid}`)).then(snap => {
-                        if(snap.exists()) {
-                            showDisconnectScreen("Вы забанены", `Причина: ${snap.val().reason}`);
-                        } else {
-                            checkAntiCheatAndStart();
-                        }
+                        if(snap.exists()) showDisconnectScreen("Вы забанены", `Причина: ${snap.val().reason}`);
+                        else checkAntiCheatAndStart();
                     }).catch(err => showDisconnectScreen("Ошибка", "Нет связи"));
                 } else { window.location.href = 'index.html'; }
             });
@@ -152,7 +143,6 @@
                     set(statusRef, {state: 'online', last_seen: Date.now()});
                     onDisconnect(statusRef).set({state: 'offline'});
                     setInterval(() => set(ref(db, `status/${currentUser.uid}/last_seen`), Date.now()), 5000);
-                    
                     hideLoadingScreen();
                     startEngine();
                     connectToLobby();
@@ -192,12 +182,20 @@
             onChildChanged(pRef, s => { if(s.key !== currentUser.uid && otherPlayers[s.key]) movePlayer(s.key, s.val()); });
             onChildRemoved(pRef, s => { if(otherPlayers[s.key]) { scene.remove(otherPlayers[s.key].mesh); delete otherPlayers[s.key]; } });
 
+            // --- ИСПРАВЛЕННАЯ СИНХРОНИЗАЦИЯ ПОЛА ---
             const wRef = ref(db, `lobbies/${LOBBY_ID}/world`);
             const handleUpdate = (snap) => {
                 const [x,y,z] = snap.key.split('_').map(Number);
                 const val = snap.val();
-                if (val === 99) { const m = objectsMap[`${x},${y},${z}`]; if (m) removeBlockLocal(m); } 
-                else { if (!hasBlock(x,y,z)) createBlock(x,y,z, materials[val], true, false); }
+                
+                // Сначала ВСЕГДА удаляем то, что там есть (даже если это трава)
+                const existing = objectsMap[`${x},${y},${z}`];
+                if (existing) removeBlockLocal(existing);
+
+                // Если это не "99" (пустота/сломано), то ставим новый блок
+                if (val !== 99) { 
+                    createBlock(x,y,z, materials[val], true, false); 
+                }
             };
             onChildAdded(wRef, handleUpdate);
             onChildChanged(wRef, handleUpdate);
@@ -297,10 +295,8 @@
                     const x = Math.round(obj.position.x), y = Math.round(obj.position.y), z = Math.round(obj.position.z);
                     removeBlockLocal(obj);
                     if(MODE === 'multi') {
-                        get(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`)).then(snap => {
-                            if(snap.exists() && snap.val() !== 99) remove(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`));
-                            else set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
-                        });
+                        // Если ломаем - ставим 99
+                        set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
                     }
                 } else if(e.button === 2) {
                     const m = hotbar[selSlot]; if(m===null) return;
@@ -374,15 +370,11 @@
             if(camera.position.y < -30) { camera.position.set(0,30,0); velocity.y=0; }
             for (let id in otherPlayers) { const p = otherPlayers[id]; p.mesh.position.lerp(p.targetPos, 0.3); p.mesh.rotation.y += (p.targetRot - p.mesh.rotation.y) * 0.3; }
             
-            // UPDATE POSITION
             if(MODE === 'multi' && t - lastUploadTime > 150) { 
                 if(playerRef && isGameRunning) {
                     update(playerRef, {
-                        x:camera.position.x, 
-                        y:camera.position.y, 
-                        z:camera.position.z, 
-                        rotation:camera.rotation.y, 
-                        nick:currentUser.displayName
+                        x:camera.position.x, y:camera.position.y, z:camera.position.z, 
+                        rotation:camera.rotation.y, nick:currentUser.displayName
                     }); 
                 }
                 lastUploadTime = t; 
