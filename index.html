@@ -2,441 +2,83 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: Symmetrical Physics</title>
+    <title>Minecraft JS: Main Menu</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
-        :root { --mc-btn-bg: #777; --mc-btn-border-light: #aaa; --mc-btn-border-dark: #555; }
-        
-        .menu-screen { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: url('./textures/dirt.png'); 
-            display: none; flex-direction: column;
-            justify-content: center; align-items: center;
-            z-index: 999;
-        }
-        .menu-screen::before {
-            content: ""; position: absolute; top:0; left:0; width:100%; height:100%;
-            background: rgba(0,0,0,0.85); z-index: -1;
-        }
-
-        .mc-btn {
-            width: 300px; height: 40px; margin: 5px;
-            font-family: sans-serif; font-size: 16px; color: #ddd; text-shadow: 1px 1px #000;
-            background-color: var(--mc-btn-bg); border: 2px solid;
-            border-color: var(--mc-btn-border-light) var(--mc-btn-border-dark) var(--mc-btn-border-dark) var(--mc-btn-border-light);
-            cursor: pointer;
-        }
-        .mc-btn:hover { background-color: #888; color: #fff; }
-        .mc-btn:active { border-color: var(--mc-btn-border-dark) var(--mc-btn-border-light) var(--mc-btn-border-light) var(--mc-btn-border-dark); }
-        
-        h1 { color: #ddd; font-size: 40px; text-shadow: 2px 2px #000; margin-bottom: 20px; font-family: sans-serif; }
-        .mc-input {
-            width: 290px; height: 30px; margin-bottom: 10px;
-            background: #000; border: 1px solid #aaa; color: #fff; padding: 5px; font-size: 16px;
-        }
-
-        #server-list, #world-list {
-            width: 400px; max-height: 250px; overflow-y: auto;
-            background: rgba(0,0,0,0.5); border: 1px solid #555; margin-bottom: 15px;
-        }
-        .list-item {
-            padding: 10px; color: white; border-bottom: 1px solid #333;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        .list-item:hover { background: rgba(255,255,255,0.1); }
-        .del-btn { background: #aa0000; padding: 2px 6px; cursor: pointer; border: 1px solid #fff; font-size: 12px; }
-
-        #game-ui { display: none; } 
-        #crosshair {
-            position: absolute; top: 50%; left: 50%; width: 20px; height: 20px;
-            border: 2px solid rgba(255, 255, 255, 0.8); border-radius: 50%;
-            transform: translate(-50%, -50%); pointer-events: none; z-index: 10;
-        }
-        #lobby-info {
-            position: absolute; top: 10px; right: 10px; color: yellow; font-weight: bold;
-            background: rgba(0,0,0,0.6); padding: 10px; border-radius: 5px; pointer-events: none; display: none;
-        }
-        #hotbar {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 10px; background: rgba(0, 0, 0, 0.5); padding: 10px;
-            border-radius: 10px; z-index: 150; pointer-events: none; 
-        }
-        .slot {
-            width: 60px; height: 60px; border: 4px solid #555; background-color: rgba(0,0,0,0.4);
-            display: flex; justify-content: center; align-items: center;
-            color: white; font-weight: bold; font-size: 20px;
-            background-size: cover; cursor: pointer; pointer-events: auto;
-        }
-        .slot.active { border-color: white; transform: scale(1.1); background-color: rgba(255, 255, 255, 0.1); }
-        
-        #inventory-screen, #pause-menu {
-            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.85); z-index: 100; 
-            justify-content: center; align-items: center; flex-direction: column;
-        }
-        #inventory-container { background: #c6c6c6; padding: 20px; border: 4px solid #555; width: 400px; display: flex; flex-direction: column; gap: 20px; }
-        .inv-grid { display: flex; gap: 10px; flex-wrap: wrap; }
-        .inv-slot { width: 50px; height: 50px; border: 2px solid #888; background: #8b8b8b; cursor: pointer; background-size: cover; }
-        #cursor-item { position: absolute; width: 40px; height: 40px; pointer-events: none; z-index: 200; background-size: cover; display: none; border: 2px solid yellow; }
-
-        .auth-form { display: flex; flex-direction: column; align-items: center; }
-        .link-text { color: #aaa; text-decoration: underline; cursor: pointer; margin-top: 10px; font-size: 14px; }
-        .error-msg { color: #ff5555; margin-bottom: 10px; font-weight: bold; display: none; }
-
-        #screen-blocked { background: #000 !important; color: red; text-align: center; }
-        .error-code { font-size: 80px; margin: 0; }
-        .error-desc { font-size: 20px; color: white; margin-bottom: 30px; max-width: 600px; }
+        body { margin: 0; font-family: 'Courier New', monospace; background: url('./textures/dirt.png'); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: white; }
+        body::before { content: ""; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.7); z-index: -1; }
+        h1 { font-size: 60px; text-shadow: 4px 4px #000; margin-bottom: 20px; }
+        .mc-btn { width: 300px; padding: 15px; margin: 10px; font-size: 20px; color: #ddd; background: #777; border: 4px solid; border-color: #aaa #555 #555 #aaa; cursor: pointer; }
+        .mc-btn:hover { background: #888; color: #fff; }
+        .mc-input { padding: 10px; width: 280px; margin: 5px; background: #000; border: 2px solid #aaa; color: white; font-size: 16px; }
+        #auth-panel { background: rgba(0,0,0,0.5); padding: 20px; border: 2px solid #555; display: flex; flex-direction: column; align-items: center; }
+        #user-panel { display: none; text-align: center; }
+        .link { color: #aaa; text-decoration: underline; cursor: pointer; margin-top: 10px; font-size: 14px; }
     </style>
 </head>
 <body>
+    <h1>MINECRAFT JS</h1>
 
-    <div id="screen-blocked" class="menu-screen">
-        <h1 class="error-code">⛔</h1><h1>ДОСТУП ЗАПРЕЩЕН</h1>
-        <div class="error-desc">Этот аккаунт активен в другой вкладке.</div>
-        <button class="mc-btn" onclick="location.reload()">Обновить</button>
-        <button class="mc-btn" onclick="forceLogout()">Выйти</button>
+    <div id="auth-panel">
+        <h2 id="auth-title">ВХОД</h2>
+        <input type="email" id="email" class="mc-input" placeholder="Email">
+        <input type="password" id="pass" class="mc-input" placeholder="Пароль">
+        <input type="text" id="nick" class="mc-input" placeholder="Никнейм" style="display:none;">
+        <button class="mc-btn" onclick="handleAuth()" id="auth-btn">ВОЙТИ</button>
+        <div class="link" onclick="toggleAuth()">Нет аккаунта? Регистрация</div>
+        <div id="error-msg" style="color:red; margin-top:5px;"></div>
     </div>
 
-    <div id="screen-auth" class="menu-screen" style="display: flex;">
-        <h1 id="auth-title">ВХОД</h1><div id="auth-error" class="error-msg">Ошибка</div>
-        <div class="auth-form">
-            <input type="email" id="auth-email" class="mc-input" placeholder="Email">
-            <input type="password" id="auth-pass" class="mc-input" placeholder="Пароль">
-            <input type="text" id="auth-nick" class="mc-input" placeholder="Никнейм" style="display: none;">
-            <button class="mc-btn" id="btn-auth-action" onclick="handleAuth()">ВОЙТИ</button>
-            <div class="link-text" id="auth-toggle" onclick="toggleAuthMode()">Нет аккаунта? Зарегистрироваться</div>
-        </div>
+    <div id="user-panel">
+        <h3>Привет, <span id="username" style="color:yellow">Стив</span>!</h3>
+        <button class="mc-btn" onclick="window.location.href='worldselect.html'">ОДИНОЧНАЯ ИГРА</button>
+        <button class="mc-btn" onclick="window.location.href='multiplayer.html'">СЕТЕВАЯ ИГРА</button>
+        <button class="mc-btn" onclick="window.location.href='settings.html'">НАСТРОЙКИ</button>
+        <button class="mc-btn" onclick="logout()" style="background:#533;">ВЫЙТИ</button>
     </div>
-
-    <div id="screen-main" class="menu-screen">
-        <h1>MINECRAFT JS</h1>
-        <div style="color: #aaa; margin-bottom: 20px;">Привет, <span id="user-display-name" style="color:white; font-weight:bold;">Игрок</span>!</div>
-        <button class="mc-btn" onclick="showScreen('screen-worlds')">Одиночная игра</button>
-        <button class="mc-btn" onclick="showScreen('screen-multi')">Сетевая игра</button>
-        <button class="mc-btn" onclick="showScreen('screen-settings')">Настройки</button>
-        <button class="mc-btn" onclick="logout()" style="background: #533; margin-top: 20px;">Выйти</button>
-    </div>
-
-    <div id="screen-multi" class="menu-screen">
-        <h1>Сетевая игра</h1>
-        <h2 style="color: #aaa; font-size: 14px; margin: 0;">Мои сервера:</h2><div id="server-list"></div>
-        <button class="mc-btn" onclick="createLobby()">Создать новый сервер</button>
-        <h2 style="margin: 5px; font-size: 14px;">--- Подключиться ---</h2>
-        <input type="text" id="lobby-code-input" class="mc-input" placeholder="Код лобби" maxlength="10">
-        <button class="mc-btn" onclick="joinLobby()">Подключиться</button>
-        <button class="mc-btn" onclick="showScreen('screen-main')">Назад</button>
-    </div>
-
-    <div id="screen-worlds" class="menu-screen">
-        <h1>Локальные миры</h1><div id="world-list"></div>
-        <input type="text" id="new-world-name" class="mc-input" placeholder="Название">
-        <button class="mc-btn" onclick="createLocalWorld()">Создать</button>
-        <button class="mc-btn" onclick="showScreen('screen-main')">Назад</button>
-    </div>
-
-    <div id="screen-settings" class="menu-screen">
-        <h1>Настройки</h1>
-        <div class="setting-row"><label>Чувствительность: <span id="sens-val">0.5</span></label><input type="range" min="0.1" max="2.0" step="0.1" value="0.5" id="sens-slider"></div>
-        <div class="setting-row"><label>Прорисовка: <span id="dist-val">60</span></label><input type="range" min="20" max="100" step="10" value="60" id="dist-slider"></div>
-        <button class="mc-btn" onclick="saveSettings()">Готово</button>
-    </div>
-
-    <div id="pause-menu">
-        <h1>Пауза</h1>
-        <button class="mc-btn" onclick="resumeGame()">Вернуться</button>
-        <button class="mc-btn" onclick="openSettingsIngame()">Настройки</button>
-        <button class="mc-btn" onclick="quitToTitle()">Сохранить и выйти</button>
-    </div>
-
-    <div id="game-ui">
-        <div id="crosshair"></div><div id="lobby-info"></div>
-        <div id="hotbar"><div class="slot active" id="slot-0"></div><div class="slot" id="slot-1"></div><div class="slot" id="slot-2"></div><div class="slot" id="slot-3"></div><div class="slot" id="slot-4"></div></div>
-        <div id="inventory-screen"><div id="inventory-container"><div style="font-weight:bold;">Блоки:</div><div class="inv-grid" id="creative-grid"></div><div style="text-align: center; color: #333; margin-top: 10px;">E - закрыть</div></div></div>
-        <div id="cursor-item"></div>
-    </div>
-
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-                "firebase-app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
-                "firebase-database": "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js",
-                "firebase-auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"
-            }
-        }
-    </script>
 
     <script type="module">
-        import * as THREE from 'three';
-        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-        import { initializeApp } from "firebase-app";
-        import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get, query, orderByChild, equalTo } from "firebase-database";
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut } from "firebase-auth";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-        const firebaseConfig = {
-          apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI",
-          authDomain: "minecraft-2ec53.firebaseapp.com",
-          projectId: "minecraft-2ec53",
-          storageBucket: "minecraft-2ec53.firebasestorage.app",
-          messagingSenderId: "1065608540888",
-          appId: "1:1065608540888:web:6d0a253399e3f6ff94ddad"
-        };
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
+        const app = initializeApp({ 
+            apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI", 
+            authDomain: "minecraft-2ec53.firebaseapp.com" 
+        });
         const auth = getAuth(app);
 
-        let isRegisterMode = false, currentUser = null, statusRef = null, heartbeatInterval = null;
-        let camera, scene, renderer, controls;
-        const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
-        let isMultiplayer = false, isHost = false, currentLobbyId = null, currentWorldName = null;
-        let isPaused = false, isGameRunning = false;
-        let playerRef, worldRef, lobbyRefCheck;
-        let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false, canJump=false, isSprinting=false, isCrouching=false;
-        const velocity = new THREE.Vector3();
-        let prevTime = performance.now(), lastUploadTime = 0;
-        let settings = { sensitivity: 0.5, renderDist: 60 };
-        let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
-        
-        // --- PHYSICS CONSTANTS ---
-        const WALK_SPEED = 5.0; 
-        const SPRINT_SPEED = 8.0; 
-        const CROUCH_SPEED = 3.0; 
-        const JUMP_FORCE = 9; 
-        const GRAVITY = 24.0;
-        
-        // !!! FAT HITBOX 0.9 !!!
-        const PLAYER_WIDTH = 0.9; 
-        const PLAYER_HEIGHT = 1.8; 
-        const EYE_HEIGHT = 1.6;
-        
-        const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-        let materials = [];
-        const textureUrls = [
-            './textures/grass.png',    // 0
-            './textures/dirt.png',     // 1
-            './textures/stone.png',    // 2
-            './textures/obsidian.png', // 3
-            './textures/iron.png'      // 4
-        ];
-
-        // --- AUTH ---
-        window.toggleAuthMode = () => { isRegisterMode=!isRegisterMode; document.getElementById('auth-title').innerText=isRegisterMode?"РЕГИСТРАЦИЯ":"ВХОД"; document.getElementById('btn-auth-action').innerText=isRegisterMode?"СОЗДАТЬ АККАУНТ":"ВОЙТИ"; document.getElementById('auth-toggle').innerText=isRegisterMode?"Уже есть аккаунт? Войти":"Нет аккаунта? Зарегистрироваться"; document.getElementById('auth-nick').style.display=isRegisterMode?"block":"none"; };
-        window.handleAuth = () => {
-            const e=document.getElementById('auth-email').value, p=document.getElementById('auth-pass').value, n=document.getElementById('auth-nick').value, err=document.getElementById('auth-error');
-            if(!e||!p){err.style.display='block';err.innerText="Заполните поля";return;}
-            if(isRegisterMode){ if(!n){err.style.display='block';err.innerText="Нужен никнейм";return;} createUserWithEmailAndPassword(auth,e,p).then((uc)=>{updateProfile(uc.user,{displayName:n});}).catch((e)=>{err.style.display='block';err.innerText=e.message;}); }
-            else { signInWithEmailAndPassword(auth,e,p).catch((e)=>{err.style.display='block';err.innerText="Ошибка входа";}); }
+        let isReg = false;
+        window.toggleAuth = () => {
+            isReg = !isReg;
+            document.getElementById('auth-title').innerText = isReg ? "РЕГИСТРАЦИЯ" : "ВХОД";
+            document.getElementById('auth-btn').innerText = isReg ? "СОЗДАТЬ" : "ВОЙТИ";
+            document.getElementById('nick').style.display = isReg ? "block" : "none";
         };
-        window.logout = () => { stopHeartbeat(); if(statusRef)set(statusRef,{state:'offline'}).then(()=>signOut(auth)); else signOut(auth); showScreen('screen-auth'); };
-        window.forceLogout = () => { signOut(auth); location.reload(); };
-        function startHeartbeat(){ if(heartbeatInterval)clearInterval(heartbeatInterval); if(statusRef)set(statusRef,{state:'online',last_seen:Date.now()}); heartbeatInterval=setInterval(()=>{if(currentUser&&statusRef){set(ref(db,`status/${currentUser.uid}/last_seen`),Date.now());}},5000); }
-        function stopHeartbeat(){ if(heartbeatInterval)clearInterval(heartbeatInterval); }
-        
+
+        window.handleAuth = () => {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('pass').value;
+            const n = document.getElementById('nick').value;
+            
+            if(isReg) {
+                if(!n) return alert("Введи ник");
+                createUserWithEmailAndPassword(auth, e, p).then(c => updateProfile(c.user, {displayName: n})).catch(e => alert(e.message));
+            } else {
+                signInWithEmailAndPassword(auth, e, p).catch(e => alert("Ошибка входа"));
+            }
+        };
+
+        window.logout = () => signOut(auth);
+
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                const userStatusRef = ref(db, `status/${user.uid}`);
-                get(userStatusRef).then((snap) => {
-                    const s = snap.val();
-                    if(s && s.state==='online' && (Date.now()-s.last_seen < 15000)) { showScreen('screen-blocked'); }
-                    else {
-                        currentUser=user; statusRef=userStatusRef;
-                        onDisconnect(statusRef).set({state:'offline'}); startHeartbeat();
-                        document.getElementById('user-display-name').innerText = user.displayName || "Игрок"; showScreen('screen-main');
-                    }
-                });
-            } else { currentUser=null; stopHeartbeat(); showScreen('screen-auth'); }
+                document.getElementById('auth-panel').style.display = 'none';
+                document.getElementById('user-panel').style.display = 'block';
+                document.getElementById('username').innerText = user.displayName;
+            } else {
+                document.getElementById('auth-panel').style.display = 'flex';
+                document.getElementById('user-panel').style.display = 'none';
+            }
         });
-        window.addEventListener("beforeunload", ()=>{ if(statusRef)set(statusRef,{state:'offline'}); });
-
-        // --- MENUS ---
-        window.showScreen = (screenId) => {
-            document.querySelectorAll('.menu-screen').forEach(el => el.style.display = 'none');
-            document.getElementById(screenId).style.display = 'flex';
-            if(screenId==='screen-worlds')renderWorldList();
-            if(screenId==='screen-multi')fetchMyServers();
-        };
-        const sS=document.getElementById('sens-slider'), dS=document.getElementById('dist-slider');
-        sS.oninput=()=>document.getElementById('sens-val').innerText=sS.value; dS.oninput=()=>document.getElementById('dist-val').innerText=dS.value;
-        window.saveSettings=()=>{ settings.sensitivity=parseFloat(sS.value); settings.renderDist=parseInt(dS.value); if(controls)controls.pointerSpeed=settings.sensitivity; if(isGameRunning){document.getElementById('screen-settings').style.display='none';document.getElementById('pause-menu').style.display='flex';}else showScreen('screen-main'); };
-        window.openSettingsIngame=()=>{document.getElementById('pause-menu').style.display='none';document.getElementById('screen-settings').style.display='flex';};
-
-        // --- WORLDS ---
-        function getLocalWorlds() { return JSON.parse(localStorage.getItem('mc_worlds') || '{}'); }
-        function saveLocalWorlds(w) { try{localStorage.setItem('mc_worlds', JSON.stringify(w))}catch(e){} }
-        window.createLocalWorld=()=>{const n=document.getElementById('new-world-name').value.trim();if(!n)return;const w=getLocalWorlds();if(w[n])return alert("Занято");w[n]={blocks:{}};saveLocalWorlds(w);loadLocalWorld(n);};
-        window.renderWorldList=()=>{const l=document.getElementById('world-list');l.innerHTML='';const w=getLocalWorlds();for(let n in w){const d=document.createElement('div');d.className='list-item';d.innerHTML=`<span>${n}</span><span class="del-btn" onclick="deleteWorld('${n}')">УДАЛИТЬ</span>`;d.onclick=(e)=>{if(!e.target.classList.contains('del-btn'))loadLocalWorld(n)};l.appendChild(d);}};
-        window.deleteWorld=(n)=>{if(confirm("Удалить?")){const w=getLocalWorlds();delete w[n];saveLocalWorlds(w);renderWorldList();}};
-        function loadLocalWorld(n){ currentWorldName=n; isMultiplayer=false; isHost=false; startEngine(); const w=getLocalWorlds()[n].blocks; if(Object.keys(w).length>0) for(let k in w){const[x,y,z]=k.split(',').map(Number);createBlock(x,y,z,materials[w[k]],false);} else generateBasicTerrain(); }
-
-        // --- MULTIPLAYER ---
-        window.fetchMyServers=()=>{ if(!currentUser)return; const l=document.getElementById('server-list');l.innerHTML='Загрузка...'; onValue(query(ref(db,'lobbies'),orderByChild('ownerId'),equalTo(currentUser.uid)),(s)=>{l.innerHTML='';if(!s.exists()){l.innerHTML='<div style="padding:10px;color:#aaa">Пусто</div>';return;} s.forEach((c)=>{const code=c.key;const d=document.createElement('div');d.className='list-item';d.innerHTML=`<span>${code}</span><span class="del-btn" onclick="killServer('${code}')">ВЫКЛЮЧИТЬ</span>`;d.onclick=(e)=>{if(!e.target.classList.contains('del-btn'))document.getElementById('lobby-code-input').value=code};l.appendChild(d)});},{onlyOnce:false}); };
-        window.createLobby=()=>{const c=Math.floor(1000+Math.random()*9000).toString();isHost=true;set(ref(db,`lobbies/${c}`),{ownerId:currentUser.uid,created:Date.now(),world:{},players:{}}).then(()=>{startMultiplayer(c)});};
-        window.killServer=(c)=>{if(confirm("Удалить?"))remove(ref(db,`lobbies/${c}`));};
-        window.joinLobby=()=>{const c=document.getElementById('lobby-code-input').value;if(!c)return; get(ref(db,`lobbies/${c}`)).then(s=>{if(s.exists()){isHost=(s.val().ownerId===currentUser.uid);startMultiplayer(c);}else alert("Нет такого")});};
-        
-        function startMultiplayer(code) {
-            isMultiplayer=true; currentLobbyId=code; currentWorldName=null; startEngine();
-            document.getElementById('lobby-info').style.display='block'; document.getElementById('lobby-info').innerText=isHost?`Лобби: ${code} (HOST)`:`Лобби: ${code}`;
-            lobbyRefCheck=onValue(ref(db,`lobbies/${currentLobbyId}`),(s)=>{if(!s.exists())quitToTitle(true,"Сервер закрыт")});
-            playerRef=ref(db,`lobbies/${currentLobbyId}/players/${currentUser.uid}`);
-            onDisconnect(playerRef).remove();
-            set(playerRef,{x:0,y:20,z:0,rotation:0,nick:currentUser.displayName});
-            const pR=ref(db,`lobbies/${currentLobbyId}/players`);
-            onChildAdded(pR,(s)=>{if(s.key!==currentUser.uid)createOtherPlayer(s.key,s.val())});
-            onChildChanged(pR,(s)=>{if(s.key!==currentUser.uid&&otherPlayers[s.key])updateOtherPlayer(s.key,s.val())});
-            onChildRemoved(pR,(s)=>{if(otherPlayers[s.key]){scene.remove(otherPlayers[s.key].mesh);delete otherPlayers[s.key]}});
-            worldRef=ref(db,`lobbies/${currentLobbyId}/world`);
-            onChildAdded(worldRef,(s)=>{const[x,y,z]=s.key.split('_').map(Number);if(!hasBlock(x,y,z))createBlock(x,y,z,materials[s.val()],true)});
-            onChildRemoved(worldRef,(s)=>{const[x,y,z]=s.key.split('_').map(Number);const m=objectsMap[`${x},${y},${z}`];if(m)removeBlockLocal(m)});
-            setTimeout(()=>{if(Object.keys(worldData).length===0)generateBasicTerrain()},1000);
-        }
-
-        // --- ENGINE ---
-        function startEngine(){ document.querySelectorAll('.menu-screen').forEach(el=>el.style.display='none'); document.getElementById('game-ui').style.display='block'; init(); controls.pointerSpeed=settings.sensitivity; scene.fog.far=settings.renderDist; camera.far=settings.renderDist*2; isGameRunning=true; isPaused=false; animate(); setTimeout(()=>{alert("Кликни чтобы играть");},100); }
-        window.resumeGame=()=>{document.getElementById('pause-menu').style.display='none';controls.lock();};
-        window.quitToTitle=(f=false,m="")=>{ if(lobbyRefCheck)lobbyRefCheck(); if(isMultiplayer&&!f)remove(playerRef); if(!isMultiplayer&&currentWorldName&&!f){const w=getLocalWorlds();const b={};for(let k in worldData){if(objectsMap[k])b[k]=materials.indexOf(objectsMap[k].material);}w[currentWorldName].blocks=b;saveLocalWorlds(w);} if(f)alert(m); location.reload(); };
-        
-        function generateBasicTerrain() {
-            const R = 12;
-            for (let x = -R; x < R; x++) {
-                for (let z = -R; z < R; z++) {
-                    createBlock(x, 0, z, materials[0]); 
-                    for(let y = -1; y >= -4; y--) createBlock(x, y, z, materials[1]); 
-                    for(let y = -5; y >= -9; y--) createBlock(x, y, z, materials[2]); 
-                    createBlock(x, -10, z, materials[3]); 
-                }
-            }
-        }
-
-        function init(){
-            scene=new THREE.Scene();scene.background=new THREE.Color(0x87CEEB);scene.fog=new THREE.Fog(0x87CEEB,10,60);
-            camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.005,1000);camera.position.set(0,15,0);
-            scene.add(new THREE.AmbientLight(0xcccccc));const d=new THREE.DirectionalLight(0xffffff,0.6);d.position.set(10,20,10);scene.add(d);
-            controls=new PointerLockControls(camera,document.body);
-            controls.addEventListener('lock',()=>{isPaused=false;document.getElementById('pause-menu').style.display='none';isInventoryOpen=false;document.getElementById('inventory-screen').style.display='none';});
-            controls.addEventListener('unlock',()=>{if(isInventoryOpen)return;isPaused=true;document.getElementById('pause-menu').style.display='flex';});
-            document.addEventListener('click',(e)=>{if(!isGameRunning||isPaused||isInventoryOpen)return;if(e.target.closest('.mc-btn')||e.target.closest('#pause-menu'))return;controls.lock();});
-            const l=new THREE.TextureLoader(); try{materials=textureUrls.map(u=>new THREE.MeshLambertMaterial({map:l.load(u,t=>{t.magFilter=THREE.NearestFilter})}));initInv();updateHotbar();}catch(e){}
-            document.addEventListener('keydown',onKeyDown);document.addEventListener('keyup',onKeyUp);document.addEventListener('wheel',onWheel);document.addEventListener('mousemove',onMM);document.addEventListener('mousedown',onMC);
-            raycaster=new THREE.Raycaster();raycaster.far=5;
-            renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(window.innerWidth,window.innerHeight);document.body.appendChild(renderer.domElement);window.addEventListener('resize',onRez);
-        }
-
-        function onKeyDown(e){ if(!isGameRunning)return; if(e.code==='KeyE'){if(isPaused)return;if(isInventoryOpen){isInventoryOpen=false;document.getElementById('inventory-screen').style.display='none';controls.lock();}else{isInventoryOpen=true;document.getElementById('inventory-screen').style.display='flex';controls.unlock();}return;} if(e.code==='KeyW')moveForward=true;if(e.code==='KeyA')moveLeft=true;if(e.code==='KeyS')moveBackward=true;if(e.code==='KeyD')moveRight=true; if(e.code==='Space'){if(canJump&&!isCrouching){velocity.y+=JUMP_FORCE;canJump=false;}} if(e.code==='ControlLeft')isSprinting=true;if(e.code==='ShiftLeft')isCrouching=true; if(e.code.startsWith('Digit')){const n=parseInt(e.code.slice(5))-1;if(n>=0&&n<5)selectSlot(n);} }
-        function onKeyUp(e){if(e.code==='KeyW')moveForward=false;if(e.code==='KeyA')moveLeft=false;if(e.code==='KeyS')moveBackward=false;if(e.code==='KeyD')moveRight=false;if(e.code==='ControlLeft')isSprinting=false;if(e.code==='ShiftLeft')isCrouching=false;}
-        function onWheel(e){if(isPaused||isInventoryOpen)return;if(e.deltaY>0){let s=selectedSlot+1;if(s>4)s=0;selectSlot(s);}else{let s=selectedSlot-1;if(s<0)s=4;selectSlot(s);}}
-        function initInv(){const g=document.getElementById('creative-grid');g.innerHTML='';textureUrls.forEach((u,i)=>{const d=document.createElement('div');d.className='inv-slot';d.style.backgroundImage=`url(${u})`;d.onclick=()=>{holdingBlockIndex=i;updCur(u)};g.appendChild(d)}); for(let i=0;i<5;i++)document.getElementById(`slot-${i}`).onclick=()=>{if(isInventoryOpen&&holdingBlockIndex!==null){hotbarContent[i]=holdingBlockIndex;updateHotbar();holdingBlockIndex=null;updCur(null)}};}
-        function updCur(u){const c=document.getElementById('cursor-item');if(u){c.style.display='block';c.style.backgroundImage=`url(${u})`;}else c.style.display='none';}
-        function updateHotbar(){for(let i=0;i<5;i++){const s=document.getElementById(`slot-${i}`);s.style.backgroundImage=hotbarContent[i]!==null?`url(${textureUrls[hotbarContent[i]]})`:'none';}}
-        function onMM(e){if(isInventoryOpen&&holdingBlockIndex!==null){const c=document.getElementById('cursor-item');c.style.left=e.clientX+'px';c.style.top=e.clientY+'px';}}
-        function selectSlot(i){selectedSlot=i;document.querySelectorAll('.slot').forEach(e=>e.classList.remove('active'));document.getElementById(`slot-${i}`).classList.add('active');}
-        function onRez(){camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);}
-
-        function getKey(x,y,z){return `${x},${y},${z}`;}
-        function hasBlock(x,y,z){return worldData[getKey(Math.round(x),Math.round(y),Math.round(z))];}
-        function createBlock(x,y,z,m,net=false){const o=new THREE.Mesh(cubeGeo,m);o.position.set(x,y,z);scene.add(o);objects.push(o);const k=getKey(x,y,z);worldData[k]=true;objectsMap[k]=o;if(isMultiplayer&&!net)set(ref(db,`lobbies/${currentLobbyId}/world/${x}_${y}_${z}`),materials.indexOf(m));}
-        function removeBlockLocal(o){scene.remove(o);objects.splice(objects.indexOf(o),1);const k=getKey(Math.round(o.position.x),Math.round(o.position.y),Math.round(o.position.z));delete worldData[k];delete objectsMap[k];}
-        function onMC(e){
-            if(isPaused||isInventoryOpen||!controls.isLocked)return;
-            raycaster.setFromCamera(new THREE.Vector2(0,0),camera);const i=raycaster.intersectObjects(objects);
-            if(i.length>0&&i[0].distance<=5){
-                if(e.button===0){removeBlockLocal(i[0].object);if(isMultiplayer)remove(ref(db,`lobbies/${currentLobbyId}/world/${Math.round(i[0].object.position.x)}_${Math.round(i[0].object.position.y)}_${Math.round(i[0].object.position.z)}`));}
-                else if(e.button===2){const m=hotbarContent[selectedSlot];if(m===null)return;const p=i[0].object.position.clone().add(i[0].face.normal);
-                if(Math.abs(camera.position.x-p.x)<0.7&&Math.abs(camera.position.z-p.z)<0.7&&(camera.position.y-1.6)<(p.y+0.5))return;
-                createBlock(p.x,p.y,p.z,materials[m]);}
-            }
-        }
-
-        function createOtherPlayer(id,data){const g=new THREE.BoxGeometry(0.6,1.8,0.6);const m=new THREE.MeshLambertMaterial({color:0xff0000});const mesh=new THREE.Mesh(g,m);const hg=new THREE.BoxGeometry(0.4,0.4,0.4);const hm=new THREE.MeshLambertMaterial({color:0xffccaa});const head=new THREE.Mesh(hg,hm);head.position.y=0.9;mesh.add(head);if(data.nick){const c=document.createElement('canvas');const ctx=c.getContext('2d');c.width=256;c.height=64;ctx.fillStyle="rgba(0,0,0,0.5)";ctx.fillRect(0,0,256,64);ctx.fillStyle="white";ctx.font="30px Arial";ctx.textAlign="center";ctx.fillText(data.nick,128,42);const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));s.position.y=1.6;s.scale.set(2,0.5,1);mesh.add(s);}mesh.position.set(data.x,data.y-0.9,data.z);scene.add(mesh);otherPlayers[id]={mesh};}
-        function updateOtherPlayer(id,data){const p=otherPlayers[id];p.mesh.position.set(data.x,data.y-0.9,data.z);p.mesh.rotation.y=data.rotation;}
-        function uploadPos(){if(isMultiplayer&&playerRef)set(playerRef,{x:camera.position.x,y:camera.position.y,z:camera.position.z,rotation:camera.rotation.y,nick:currentUser.displayName});}
-
-        // --- NEW SYMMETRICAL PHYSICS ---
-        function resolveCollision(newPos) {
-            const radius = PLAYER_WIDTH / 2;
-            let minX = newPos.x - radius; let maxX = newPos.x + radius;
-            let minY = newPos.y - EYE_HEIGHT; let maxY = newPos.y + (PLAYER_HEIGHT - EYE_HEIGHT);
-            let minZ = newPos.z - radius; let maxZ = newPos.z + radius;
-
-            // FIX: Use ROUND instead of FLOOR to handle coordinates correctly around 0
-            const startX = Math.round(minX); const endX = Math.round(maxX);
-            const startY = Math.round(minY); const endY = Math.round(maxY);
-            const startZ = Math.round(minZ); const endZ = Math.round(maxZ);
-
-            for (let y = startY; y <= endY; y++) {
-                for (let z = startZ; z <= endZ; z++) {
-                    for (let x = startX; x <= endX; x++) {
-                        if (hasBlock(x, y, z)) {
-                            // Block AABB (Centered at x,y,z with width 1)
-                            const bMinX = x - 0.5, bMaxX = x + 0.5;
-                            const bMinY = y - 0.5, bMaxY = y + 0.5;
-                            const bMinZ = z - 0.5, bMaxZ = z + 0.5;
-                            
-                            // Check overlap
-                            if (maxX > bMinX && minX < bMaxX && 
-                                maxY > bMinY && minY < bMaxY && 
-                                maxZ > bMinZ && minZ < bMaxZ) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-            return false;
-        }
-
-        function animate() {
-            requestAnimationFrame(animate); if(!isGameRunning)return;
-            const t=performance.now(), d=Math.min((t-prevTime)/1000,0.05);
-            let sim=false; if(isMultiplayer)sim=true; else if(!isPaused&&!isInventoryOpen&&controls.isLocked)sim=true;
-            if(sim) {
-                velocity.y -= GRAVITY * d;
-                if((isMultiplayer&&controls.isLocked&&!isInventoryOpen)||(!isMultiplayer&&sim)) {
-                    const fwd = Number(moveForward) - Number(moveBackward);
-                    const right = Number(moveRight) - Number(moveLeft);
-                    if (fwd !== 0 || right !== 0) {
-                        const front = new THREE.Vector3();
-                        camera.getWorldDirection(front);
-                        front.y = 0; front.normalize();
-                        const side = new THREE.Vector3();
-                        side.crossVectors(front, camera.up).normalize(); 
-                        const moveDir = new THREE.Vector3();
-                        moveDir.addScaledVector(front, fwd);
-                        moveDir.addScaledVector(side, right);
-                        moveDir.normalize();
-                        let spd=isCrouching?CROUCH_SPEED:(isSprinting?SPRINT_SPEED:WALK_SPEED);
-                        velocity.x += moveDir.x * spd * d * 10;
-                        velocity.z += moveDir.z * spd * d * 10;
-                    }
-                }
-                velocity.x -= velocity.x * 10.0 * d; velocity.z -= velocity.z * 10.0 * d;
-                const pos = camera.position.clone();
-                
-                pos.x += velocity.x * d; 
-                if (resolveCollision(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
-                
-                pos.z += velocity.z * d; 
-                if (resolveCollision(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
-                
-                pos.y += velocity.y * d; 
-                if (resolveCollision(pos)) { 
-                    const wasFalling = velocity.y < 0; 
-                    pos.y -= velocity.y * d; velocity.y = 0; 
-                    if (wasFalling) { 
-                        canJump = true; 
-                        // Snap to top
-                        const feetY = pos.y - EYE_HEIGHT;
-                        const blockY = Math.round(feetY - 0.5);
-                        pos.y = blockY + 0.5 + EYE_HEIGHT; 
-                    } 
-                }
-                camera.position.copy(pos);
-                if(camera.position.y < -30) { camera.position.set(0,20,0); velocity.y=0; }
-                if(isMultiplayer && t-lastUploadTime>150) { uploadPos(); lastUploadTime=t; }
-            }
-            prevTime=t; renderer.render(scene, camera);
-        }
     </script>
 </body>
 </html>
