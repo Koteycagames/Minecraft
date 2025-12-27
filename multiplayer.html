@@ -14,11 +14,8 @@
         .mc-btn:hover { background: #999; color: #fff; }
         .btn-red { background: #800; border-color: #a00; }
         .btn-red:hover { background: #a00; }
-        .btn-green { background: #080; border-color: #0a0; }
-        .btn-green:hover { background: #0a0; }
         .input-code { width: 380px; padding: 10px; margin: 10px 0; background: black; color: white; border: 2px solid #555; }
         
-        /* Modal for Kick/Ban */
         #player-modal { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
         .p-list { width: 400px; max-height: 300px; overflow-y: auto; border: 1px solid #fff; margin: 10px; }
         .p-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #555; }
@@ -93,7 +90,6 @@
             });
         }
 
-        // --- HOST ACTIONS ---
         window.toggleStatus = (code, currentStatus) => {
             const newStatus = currentStatus === 'offline' ? 'online' : 'offline';
             update(ref(db, `lobbies/${code}`), { status: newStatus });
@@ -105,7 +101,6 @@
             }
         };
 
-        // --- PLAYER MANAGEMENT (MODAL) ---
         window.openPlayerMenu = (code, action) => {
             const modal = document.getElementById('player-modal');
             const list = document.getElementById('modal-list');
@@ -122,7 +117,7 @@
                 snap.forEach(p => {
                     const uid = p.key;
                     const nick = p.val().nick || "Unknown";
-                    if(uid === currentUser.uid) return; // Нельзя кикнуть себя
+                    if(uid === currentUser.uid) return; 
 
                     const item = document.createElement('div');
                     item.className = 'p-item';
@@ -139,34 +134,37 @@
 
         window.closeModal = () => document.getElementById('player-modal').style.display = 'none';
 
+        // --- ИСПРАВЛЕННАЯ ЛОГИКА ---
         function kickPlayer(code, uid, nick) {
             if(confirm(`Кикнуть ${nick}?`)) {
-                remove(ref(db, `lobbies/${code}/players/${uid}`));
+                // Не удаляем сразу, а ставим метку _forceKick
+                update(ref(db, `lobbies/${code}/players/${uid}`), { _forceKick: true });
             }
         }
 
         function banPlayer(code, uid, nick) {
             const reason = prompt(`Причина бана для ${nick}:`, "Нарушение правил");
             if(reason) {
-                // 1. Добавляем в бан-лист
+                // Сначала добавляем в список забаненных
                 set(ref(db, `lobbies/${code}/banned/${uid}`), {
                     nick: nick,
                     reason: reason,
                     timestamp: Date.now()
+                }).then(() => {
+                    // Потом ставим метку _forceBan
+                    update(ref(db, `lobbies/${code}/players/${uid}`), { _forceBan: true });
                 });
-                // 2. Кикаем (удаляем из игроков)
-                remove(ref(db, `lobbies/${code}/players/${uid}`));
                 alert(`${nick} был забанен.`);
             }
         }
+        // -----------------------------
 
-        // --- JOIN/CREATE ---
         window.createLobby = () => {
             const code = Math.floor(1000 + Math.random() * 9000).toString();
             set(ref(db, `lobbies/${code}`), {
                 ownerId: currentUser.uid,
                 created: Date.now(),
-                status: 'online', // По умолчанию включен
+                status: 'online', 
                 world: {},
                 players: {}
             }).then(() => enterGame(code, true));
@@ -178,7 +176,6 @@
             get(ref(db, `lobbies/${code}`)).then(snap => {
                 if(snap.exists()) {
                     const data = snap.val();
-                    // Проверка статуса
                     if(data.status === 'offline' && data.ownerId !== currentUser.uid) {
                         return alert("Сервер выключен хостом (Оффлайн).");
                     }
