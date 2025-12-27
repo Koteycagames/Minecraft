@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Minecraft JS: GAME</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); z-index: 10; pointer-events: none; }
+        #hotbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 10px; z-index: 150; }
+        .slot { width: 60px; height: 60px; border: 4px solid #555; background-color: rgba(0,0,0,0.4); background-size: cover; cursor: pointer; }
+        .slot.active { border-color: white; transform: scale(1.1); background-color: rgba(255,255,255,0.1); }
+        #pause-menu, #inventory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
+        .mc-btn { width: 300px; padding: 15px; margin: 10px; font-size: 20px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; }
+        .inv-grid { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 400px; }
+        .inv-slot { width: 50px; height: 50px; border: 2px solid #888; background: #8b8b8b; cursor: pointer; background-size: cover; }
+        #cursor-item { position: absolute; width: 40px; height: 40px; pointer-events: none; z-index: 200; background-size: cover; display: none; border: 2px solid yellow; }
+        #screen-blocked { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: black; color: red; z-index: 9999; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        #info-panel { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.5); padding: 10px; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="crosshair"></div>
+    <div id="info-panel"></div>
+    
+    <div id="hotbar">
+        <div class="slot active" id="slot-0"></div><div class="slot" id="slot-1"></div>
+        <div class="slot" id="slot-2"></div><div class="slot" id="slot-3"></div><div class="slot" id="slot-4"></div>
+    </div>
+
+    <div id="pause-menu">
+        <h1 style="color:white; font-size:40px;">ПАУЗА</h1>
+        <button class="mc-btn" onclick="resume()">ВЕРНУТЬСЯ</button>
+        <button class="mc-btn" onclick="quit()">СОХРАНИТЬ И ВЫЙТИ</button>
+    </div>
+
+    <div id="inventory-screen">
+        <h2 style="color:white">БЛОКИ</h2>
+        <div class="inv-grid" id="creative-grid"></div>
+        <div style="color:white; margin-top:20px;">E - Закрыть</div>
+    </div>
+    <div id="cursor-item"></div>
+
+    <div id="screen-blocked">
+        <h1 style="font-size:80px">⛔</h1>
+        <h2 style="color:white">ОШИБКА ДОСТУПА / АНТИЧИТ</h2>
+        <button class="mc-btn" onclick="location.href='main.html'">В МЕНЮ</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "firebase-app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+                "firebase-database": "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js",
+                "firebase-auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { initializeApp } from "firebase-app";
+        import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get } from "firebase-database";
+        import { getAuth, onAuthStateChanged } from "firebase-auth";
+
+        // --- DATA LOAD ---
+        const MODE = localStorage.getItem('mc_mode'); // 'single' or 'multi'
+        const WORLD_NAME = localStorage.getItem('mc_current_world');
+        const LOBBY_ID = localStorage.getItem('mc_lobby_id');
+        const SETTINGS = JSON.parse(localStorage.getItem('mc_settings') || '{"sens":0.5, "dist":60}');
+        
+        // --- FIREBASE ---
+        const app = initializeApp({ apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI", authDomain: "minecraft-2ec53.firebaseapp.com", projectId: "minecraft-2ec53", storageBucket: "minecraft-2ec53.firebasestorage.app", messagingSenderId: "1065608540888", appId: "1:1065608540888:web:6d0a253399e3f6ff94ddad" });
+        const db = getDatabase(app);
+        const auth = getAuth(app);
+        let currentUser = null, playerRef = null, statusRef = null;
+
+        // --- GAME VARS ---
+        let camera, scene, renderer, controls;
+        const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
+        let isPaused = false, isGameRunning = false, isInvOpen = false;
+        let moveF=0, moveB=0, moveL=0, moveR=0, canJump=false, isSprint=false, isCrouch=false;
+        const velocity = new THREE.Vector3();
+        let prevTime = performance.now(), lastUploadTime = 0;
+        
+        // Physics
+        const WALK=5.0, SPRINT=8.0, CROUCH=3.0, JUMP=9, GRAVITY=24.0, P_W=0.9, P_H=1.8, EYE=1.6;
+        const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+        let materials = [];
+        const texUrls = ['./textures/grass.png', './textures/dirt.png', './textures/stone.png', './textures/obsidian.png', './textures/iron.png'];
+        let hotbar = [null,null,null,null,null], selSlot=0, holdBlock=null;
+
+        // --- INIT SEQUENCE ---
+        if(MODE === 'multi') {
+            onAuthStateChanged(auth, user => {
+                if(user) {
+                    currentUser = user;
+                    checkAntiCheatAndStart();
+                } else {
+                    window.location.href = 'main.html';
+                }
+            });
+        } else {
+            // Singleplayer
+            startEngine();
+            loadLocalWorld();
+        }
+
+        // --- MULTIPLAYER LOGIC ---
+        function checkAntiCheatAndStart() {
+            const sRef = ref(db, `status/${currentUser.uid}`);
+            get(sRef).then(snap => {
+                const s = snap.val();
+                if(s && s.state === 'online' && (Date.now() - s.last_seen < 15000)) {
+                    document.getElementById('screen-blocked').style.display = 'flex'; // Blocked
+                } else {
+                    statusRef = sRef;
+                    set(statusRef, {state: 'online', last_seen: Date.now()});
+                    onDisconnect(statusRef).set({state: 'offline'});
+                    setInterval(() => set(ref(db, `status/${currentUser.uid}/last_seen`), Date.now()), 5000);
+                    
+                    startEngine();
+                    connectToLobby();
+                }
+            });
+        }
+
+        function connectToLobby() {
+            document.getElementById('info-panel').innerText = `Сервер: ${LOBBY_ID}`;
+            
+            // Listen for Lobby Death
+            onValue(ref(db, `lobbies/${LOBBY_ID}`), s => { if(!s.exists()) quit(true, "Сервер выключен"); });
+
+            // Player Setup
+            playerRef = ref(db, `lobbies/${LOBBY_ID}/players/${currentUser.uid}`);
+            onDisconnect(playerRef).remove();
+            set(playerRef, { x:0, y:20, z:0, rotation:0, nick: currentUser.displayName });
+
+            // Other Players
+            const pRef = ref(db, `lobbies/${LOBBY_ID}/players`);
+            onChildAdded(pRef, s => { if(s.key !== currentUser.uid) spawnPlayer(s.key, s.val()); });
+            onChildChanged(pRef, s => { if(s.key !== currentUser.uid && otherPlayers[s.key]) movePlayer(s.key, s.val()); });
+            onChildRemoved(pRef, s => { if(otherPlayers[s.key]) { scene.remove(otherPlayers[s.key].mesh); delete otherPlayers[s.key]; } });
+
+            // World Sync
+            const wRef = ref(db, `lobbies/${LOBBY_ID}/world`);
+            onChildAdded(wRef, s => { 
+                const [x,y,z] = s.key.split('_').map(Number); 
+                if(!hasBlock(x,y,z)) createBlock(x,y,z, materials[s.val()], true);
+            });
+            onChildRemoved(wRef, s => {
+                const [x,y,z] = s.key.split('_').map(Number); 
+                const m = objectsMap[`${x},${y},${z}`];
+                if(m) removeBlockLocal(m);
+            });
+
+            // Init terrain if empty
+            setTimeout(() => { if(Object.keys(worldData).length === 0) genTerrain(); }, 2000);
+        }
+
+        // --- SINGLEPLAYER LOGIC ---
+        function loadLocalWorld() {
+            document.getElementById('info-panel').innerText = `Мир: ${WORLD_NAME}`;
+            const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
+            const data = worlds[WORLD_NAME]?.blocks || {};
+            
+            if(Object.keys(data).length > 0) {
+                for(let k in data) {
+                    const [x,y,z] = k.split(',').map(Number);
+                    createBlock(x,y,z, materials[data[k]], false);
+                }
+            } else {
+                genTerrain();
+            }
+        }
+
+        function saveLocalWorld() {
+            if(MODE !== 'single') return;
+            const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
+            const b = {};
+            for(let k in worldData) { if(objectsMap[k]) b[k] = materials.indexOf(objectsMap[k].material); }
+            worlds[WORLD_NAME].blocks = b;
+            localStorage.setItem('mc_worlds', JSON.stringify(worlds));
+        }
+
+        // --- ENGINE ---
+        function startEngine() {
+            init3D();
+            isGameRunning = true;
+            animate();
+        }
+
+        function init3D() {
+            scene = new THREE.Scene(); scene.background = new THREE.Color(0x87CEEB); scene.fog = new THREE.Fog(0x87CEEB, 10, SETTINGS.dist);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.005, SETTINGS.dist * 2); camera.position.set(0, 15, 0);
+            scene.add(new THREE.AmbientLight(0xcccccc)); 
+            const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(10,20,10); scene.add(dl);
+
+            controls = new PointerLockControls(camera, document.body);
+            controls.pointerSpeed = SETTINGS.sens;
+
+            // Events
+            controls.addEventListener('lock', () => { isPaused=false; document.getElementById('pause-menu').style.display='none'; isInvOpen=false; document.getElementById('inventory-screen').style.display='none'; });
+            controls.addEventListener('unlock', () => { if(isInvOpen)return; isPaused=true; document.getElementById('pause-menu').style.display='flex'; });
+            
+            // Textures
+            const l = new THREE.TextureLoader();
+            try { materials = texUrls.map(u => new THREE.MeshLambertMaterial({ map: l.load(u, t=>{t.magFilter=THREE.NearestFilter}) })); } catch(e){}
+            initUI();
+
+            // Inputs
+            document.addEventListener('keydown', onKey); document.addEventListener('keyup', onKey);
+            document.addEventListener('wheel', onWheel); document.addEventListener('mousedown', onClick);
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('click', () => { if(!isPaused && !isInvOpen) controls.lock(); });
+
+            raycaster = new THREE.Raycaster(); raycaster.far = 5;
+            renderer = new THREE.WebGLRenderer({antialias: true}); renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            window.addEventListener('resize', () => { camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); });
+        }
+
+        // --- GAMEPLAY ---
+        window.resume = () => { document.getElementById('pause-menu').style.display='none'; controls.lock(); };
+        window.quit = (forced, msg) => {
+            if(MODE === 'single') saveLocalWorld();
+            if(MODE === 'multi' && playerRef) remove(playerRef);
+            if(statusRef) set(statusRef, {state: 'offline'}); // Anti-cheat release
+            if(forced) alert(msg);
+            window.location.href = 'main.html';
+        };
+
+        function genTerrain() {
+            const R = 12;
+            for(let x=-R; x<R; x++) for(let z=-R; z<R; z++) {
+                createBlock(x, 0, z, materials[0]);
+                for(let y=-1; y>=-4; y--) createBlock(x, y, z, materials[1]);
+                for(let y=-5; y>=-9; y--) createBlock(x, y, z, materials[2]);
+                createBlock(x, -10, z, materials[3]);
+            }
+        }
+
+        // --- BLOCK LOGIC ---
+        function getKey(x,y,z){return `${x},${y},${z}`;}
+        function hasBlock(x,y,z){return worldData[getKey(Math.round(x),Math.round(y),Math.round(z))];}
+        
+        function createBlock(x,y,z,m,net=false) {
+            const o = new THREE.Mesh(cubeGeo, m); o.position.set(x,y,z); scene.add(o); objects.push(o);
+            const k = getKey(x,y,z); worldData[k]=true; objectsMap[k]=o;
+            if(MODE === 'multi' && !net) set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), materials.indexOf(m));
+        }
+        
+        function removeBlockLocal(o) {
+            scene.remove(o); objects.splice(objects.indexOf(o),1);
+            const k = getKey(Math.round(o.position.x), Math.round(o.position.y), Math.round(o.position.z));
+            delete worldData[k]; delete objectsMap[k];
+        }
+
+        function onClick(e) {
+            if(isPaused || isInvOpen || !controls.isLocked) return;
+            raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+            const i = raycaster.intersectObjects(objects);
+            if(i.length > 0 && i[0].distance <= 5) {
+                if(e.button === 0) {
+                    removeBlockLocal(i[0].object);
+                    if(MODE === 'multi') remove(ref(db, `lobbies/${LOBBY_ID}/world/${Math.round(i[0].object.position.x)}_${Math.round(i[0].object.position.y)}_${Math.round(i[0].object.position.z)}`));
+                } else if(e.button === 2) {
+                    const m = hotbar[selSlot]; if(m===null) return;
+                    const p = i[0].object.position.clone().add(i[0].face.normal);
+                    // Check collision with player
+                    if(Math.abs(camera.position.x - p.x) < 0.8 && Math.abs(camera.position.z - p.z) < 0.8 && (camera.position.y - EYE) < (p.y + 0.5)) return;
+                    createBlock(p.x, p.y, p.z, materials[m]);
+                }
+            }
+        }
+
+        // --- ENTITIES ---
+        function spawnPlayer(id, data) {
+            const g = new THREE.BoxGeometry(0.6, 1.8, 0.6); const m = new THREE.MeshLambertMaterial({color:0xff0000});
+            const mesh = new THREE.Mesh(g, m);
+            if(data.nick) {
+                const c=document.createElement('canvas'); const x=c.getContext('2d'); c.width=256;c.height=64;
+                x.fillStyle="rgba(0,0,0,0.5)"; x.fillRect(0,0,256,64); x.fillStyle="white"; x.font="30px Arial"; x.textAlign="center"; x.fillText(data.nick,128,42);
+                const s = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)})); s.position.y=1.6; s.scale.set(2,0.5,1); mesh.add(s);
+            }
+            mesh.position.set(data.x, data.y-0.9, data.z); scene.add(mesh); otherPlayers[id] = {mesh};
+        }
+        function movePlayer(id, data) {
+            const p = otherPlayers[id]; if(p) { p.mesh.position.set(data.x, data.y-0.9, data.z); p.mesh.rotation.y = data.rotation; }
+        }
+
+        // --- PHYSICS & CONTROLS ---
+        function onKey(e) {
+            const down = e.type === 'keydown';
+            if(e.code === 'KeyW') moveF = down; if(e.code === 'KeyS') moveB = down;
+            if(e.code === 'KeyA') moveL = down; if(e.code === 'KeyD') moveR = down;
+            if(e.code === 'Space') if(down && canJump && !isCrouch) { velocity.y += JUMP; canJump = false; }
+            if(e.code === 'ControlLeft') isSprint = down; if(e.code === 'ShiftLeft') isCrouch = down;
+            if(down && e.code === 'KeyE') {
+                if(isInvOpen) { isInvOpen = false; document.getElementById('inventory-screen').style.display='none'; controls.lock(); }
+                else { isInvOpen = true; document.getElementById('inventory-screen').style.display='flex'; controls.unlock(); }
+            }
+            if(down && e.code.startsWith('Digit')) { const n = parseInt(e.code.slice(5))-1; if(n>=0 && n<5) selectSlot(n); }
+        }
+
+        function resolveCol(pos) {
+            const r = P_W / 2;
+            const minX = pos.x - r, maxX = pos.x + r;
+            const minZ = pos.z - r, maxZ = pos.z + r;
+            const minY = pos.y - EYE, maxY = pos.y + (P_H - EYE);
+
+            for(let y = Math.round(minY); y <= Math.round(maxY); y++) {
+                for(let z = Math.round(minZ); z <= Math.round(maxZ); z++) {
+                    for(let x = Math.round(minX); x <= Math.round(maxX); x++) {
+                        if(hasBlock(x,y,z)) {
+                            if (maxX > x-0.5 && minX < x+0.5 && maxY > y-0.5 && minY < y+0.5 && maxZ > z-0.5 && minZ < z+0.5) return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate); if(!isGameRunning || isPaused) return;
+            const t = performance.now(), d = Math.min((t-prevTime)/1000, 0.05);
+            
+            // Physics
+            velocity.y -= GRAVITY * d;
+            
+            // Move Logic
+            const fwd = Number(moveF) - Number(moveB);
+            const right = Number(moveR) - Number(moveL);
+            if(fwd !== 0 || right !== 0) {
+                const front = new THREE.Vector3(); camera.getWorldDirection(front); front.y=0; front.normalize();
+                const side = new THREE.Vector3(); side.crossVectors(front, camera.up).normalize();
+                const dir = new THREE.Vector3(); dir.addScaledVector(front, fwd); dir.addScaledVector(side, right); dir.normalize();
+                let s = isCrouch ? CROUCH : (isSprint ? SPRINT : WALK);
+                velocity.x += dir.x * s * d * 10; velocity.z += dir.z * s * d * 10;
+            }
+            velocity.x -= velocity.x * 10.0 * d; velocity.z -= velocity.z * 10.0 * d;
+
+            const pos = camera.position.clone();
+            pos.x += velocity.x * d; if(resolveCol(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
+            pos.z += velocity.z * d; if(resolveCol(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
+            pos.y += velocity.y * d; 
+            if(resolveCol(pos)) { 
+                const fall = velocity.y < 0; 
+                pos.y -= velocity.y * d; velocity.y = 0; 
+                if(fall) { canJump = true; pos.y = Math.round(pos.y - EYE - 0.5) + 0.5 + EYE; } // Snap
+            }
+            camera.position.copy(pos);
+            if(camera.position.y < -30) { camera.position.set(0,30,0); velocity.y=0; }
+
+            // Network
+            if(MODE === 'multi' && t - lastUploadTime > 150) {
+                if(playerRef) set(playerRef, {x:camera.position.x, y:camera.position.y, z:camera.position.z, rotation:camera.rotation.y, nick:currentUser.displayName});
+                lastUploadTime = t;
+            }
+
+            prevTime = t;
+            renderer.render(scene, camera);
+        }
+
+        // --- UI HELPERS ---
+        function initUI() {
+            const g = document.getElementById('creative-grid');
+            texUrls.forEach((u,i) => {
+                const d = document.createElement('div'); d.className='inv-slot'; d.style.backgroundImage=`url(${u})`;
+                d.onclick = () => { holdBlock = i; updCur(u); };
+                g.appendChild(d);
+            });
+            for(let i=0; i<5; i++) document.getElementById(`slot-${i}`).onclick = () => {
+                if(isInvOpen && holdBlock!==null) { hotbar[i]=holdBlock; updHot(); holdBlock=null; updCur(null); }
+            };
+        }
+        function updCur(u) { const c=document.getElementById('cursor-item'); if(u){c.style.display='block';c.style.backgroundImage=`url(${u})`;}else c.style.display='none'; }
+        function updHot() { for(let i=0;i<5;i++) { const s=document.getElementById(`slot-${i}`); s.style.backgroundImage = hotbar[i]!==null ? `url(${texUrls[hotbar[i]]})` : 'none'; } }
+        function selectSlot(n) { selSlot=n; document.querySelectorAll('.slot').forEach(e=>e.classList.remove('active')); document.getElementById(`slot-${n}`).classList.add('active'); }
+        function onWheel(e) { if(isPaused)return; if(e.deltaY>0){let s=selSlot+1;if(s>4)s=0;selectSlot(s);}else{let s=selSlot-1;if(s<0)s=4;selectSlot(s);} }
+        function onMove(e) { if(isInvOpen && holdBlock!==null) { const c=document.getElementById('cursor-item'); c.style.left=e.clientX+'px'; c.style.top=e.clientY+'px'; } }
+    </script>
+</body>
+</html>
