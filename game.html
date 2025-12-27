@@ -2,30 +2,74 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: GAME</title>
+    <title>Minecraft JS: Game Client</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; }
+        
+        /* Игровой интерфейс */
+        #game-ui { display: block; }
         #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); z-index: 10; pointer-events: none; }
         #hotbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 10px; z-index: 150; }
         .slot { width: 60px; height: 60px; border: 4px solid #555; background-color: rgba(0,0,0,0.4); background-size: cover; cursor: pointer; }
         .slot.active { border-color: white; transform: scale(1.1); background-color: rgba(255,255,255,0.1); }
-        #pause-menu, #inventory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
-        .mc-btn { width: 300px; padding: 15px; margin: 10px; font-size: 20px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; }
+        #info-panel { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.5); padding: 10px; pointer-events: none; font-weight: bold; }
+
+        /* Меню (Пауза, Инвентарь) */
+        .overlay-menu { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
+        .mc-btn { width: 300px; padding: 15px; margin: 10px; font-size: 20px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; text-shadow: 2px 2px #000; }
+        .mc-btn:hover { background: #888; color: white; border-color: #777; }
+        
+        /* Инвентарь */
         .inv-grid { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; width: 400px; }
         .inv-slot { width: 50px; height: 50px; border: 2px solid #888; background: #8b8b8b; cursor: pointer; background-size: cover; }
         #cursor-item { position: absolute; width: 40px; height: 40px; pointer-events: none; z-index: 200; background-size: cover; display: none; border: 2px solid yellow; }
-        #screen-blocked { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: black; color: red; z-index: 9999; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-        #info-panel { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.5); padding: 10px; pointer-events: none; }
+
+        /* ЭКРАН ОШИБКИ (КРАСИВЫЙ) */
+        #screen-error { 
+            display: none; 
+            position: absolute; top:0; left:0; width:100%; height:100%; 
+            background: url('./textures/dirt.png'); /* Фон грязи */
+            z-index: 9999; 
+            flex-direction: column; align-items: center; justify-content: center; 
+            text-align: center;
+        }
+        #screen-error::before {
+            content: ""; position: absolute; top:0; left:0; width:100%; height:100%;
+            background: rgba(0,0,0,0.75); z-index: -1; /* Затемнение */
+        }
+        .err-title { font-size: 60px; color: #ff5555; text-shadow: 4px 4px #000; margin-bottom: 10px; }
+        .err-desc { font-size: 24px; color: white; margin-bottom: 40px; text-shadow: 2px 2px #000; max-width: 600px; }
     </style>
 </head>
 <body>
-    <div id="crosshair"></div>
-    <div id="info-panel"></div>
-    <div id="hotbar"><div class="slot active" id="slot-0"></div><div class="slot" id="slot-1"></div><div class="slot" id="slot-2"></div><div class="slot" id="slot-3"></div><div class="slot" id="slot-4"></div></div>
-    <div id="pause-menu"><h1 style="color:white; font-size:40px;">ПАУЗА</h1><button class="mc-btn" onclick="resume()">ВЕРНУТЬСЯ</button><button class="mc-btn" onclick="quit()">СОХРАНИТЬ И ВЫЙТИ</button></div>
-    <div id="inventory-screen"><h2 style="color:white">БЛОКИ</h2><div class="inv-grid" id="creative-grid"></div><div style="color:white; margin-top:20px;">E - Закрыть</div></div>
+
+    <div id="game-ui">
+        <div id="crosshair"></div>
+        <div id="info-panel">Загрузка...</div>
+        <div id="hotbar">
+            <div class="slot active" id="slot-0"></div><div class="slot" id="slot-1"></div>
+            <div class="slot" id="slot-2"></div><div class="slot" id="slot-3"></div><div class="slot" id="slot-4"></div>
+        </div>
+    </div>
+
+    <div id="pause-menu" class="overlay-menu">
+        <h1 style="color:white; font-size:40px; text-shadow:2px 2px #000;">ПАУЗА</h1>
+        <button class="mc-btn" onclick="resume()">ВЕРНУТЬСЯ</button>
+        <button class="mc-btn" onclick="quit(false)">СОХРАНИТЬ И ВЫЙТИ</button>
+    </div>
+
+    <div id="inventory-screen" class="overlay-menu">
+        <h2 style="color:white; text-shadow:2px 2px #000;">БЛОКИ</h2>
+        <div class="inv-grid" id="creative-grid"></div>
+        <div style="color:#aaa; margin-top:20px;">E - Закрыть</div>
+    </div>
     <div id="cursor-item"></div>
-    <div id="screen-blocked"><h1 style="font-size:80px">⛔</h1><h2 id="block-msg" style="color:white">ОШИБКА</h2><button class="mc-btn" onclick="location.href='index.html'">В МЕНЮ</button></div>
+
+    <div id="screen-error">
+        <h1 class="err-title" id="err-header">ОТКЛЮЧЕНО</h1>
+        <div class="err-desc" id="err-msg">Связь с сервером потеряна</div>
+        <button class="mc-btn" onclick="location.href='index.html'">В МЕНЮ</button>
+    </div>
 
     <script type="importmap">
         {
@@ -46,7 +90,7 @@
         import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get } from "firebase-database";
         import { getAuth, onAuthStateChanged } from "firebase-auth";
 
-        // --- SETUP ---
+        // --- КОНФИГУРАЦИЯ ---
         const MODE = localStorage.getItem('mc_mode'); 
         const WORLD_NAME = localStorage.getItem('mc_current_world');
         const LOBBY_ID = localStorage.getItem('mc_lobby_id');
@@ -58,7 +102,7 @@
         const auth = getAuth(app);
         let currentUser = null, playerRef = null, statusRef = null;
 
-        // --- GAME VARS ---
+        // --- ПЕРЕМЕННЫЕ ИГРЫ ---
         let camera, scene, renderer, controls;
         const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
         let isPaused = false, isGameRunning = false, isInvOpen = false;
@@ -66,21 +110,22 @@
         const velocity = new THREE.Vector3();
         let prevTime = performance.now(), lastUploadTime = 0;
         
+        // Физика
         const WALK=5.0, SPRINT=8.0, CROUCH=3.0, JUMP=9, GRAVITY=24.0, P_W=0.9, P_H=1.8, EYE=1.6;
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
         const texUrls = ['./textures/grass.png', './textures/dirt.png', './textures/stone.png', './textures/obsidian.png', './textures/iron.png'];
         let hotbar = [null,null,null,null,null], selSlot=0, holdBlock=null;
 
-        // --- INIT ---
+        // --- ЗАПУСК ---
         if(MODE === 'multi') {
             onAuthStateChanged(auth, user => {
                 if(user) {
                     currentUser = user;
-                    // Check BAN before starting
+                    // Проверка бана ПЕРЕД входом
                     get(ref(db, `lobbies/${LOBBY_ID}/banned/${currentUser.uid}`)).then(snap => {
                         if(snap.exists()) {
-                            showError(`ВЫ ЗАБАНЕНЫ!\nПричина: ${snap.val().reason}`);
+                            quit(true, "ВЫ ЗАБАНЕНЫ", `Причина: ${snap.val().reason}`);
                         } else {
                             checkAntiCheatAndStart();
                         }
@@ -92,18 +137,13 @@
             loadLocalWorld();
         }
 
-        function showError(msg) {
-            document.getElementById('screen-blocked').style.display = 'flex';
-            document.getElementById('block-msg').innerText = msg;
-        }
-
-        // --- MULTIPLAYER ---
+        // --- МУЛЬТИПЛЕЕР: ПРОВЕРКИ ---
         function checkAntiCheatAndStart() {
             const sRef = ref(db, `status/${currentUser.uid}`);
             get(sRef).then(snap => {
                 const s = snap.val();
                 if(s && s.state === 'online' && (Date.now() - s.last_seen < 15000)) {
-                    showError("ОШИБКА: Двойной вход в аккаунт");
+                    quit(true, "ОШИБКА ВХОДА", "Аккаунт уже используется в другой сессии");
                 } else {
                     statusRef = sRef;
                     set(statusRef, {state: 'online', last_seen: Date.now()});
@@ -117,38 +157,42 @@
 
         function connectToLobby() {
             document.getElementById('info-panel').innerText = `Сервер: ${LOBBY_ID}`;
-            genTerrain();
+            genTerrain(); // Локальная генерация
 
-            // 1. Check if server deleted or offline
+            // 1. Статус сервера (Удален или Остановлен)
             onValue(ref(db, `lobbies/${LOBBY_ID}`), s => { 
-                if(!s.exists()) quit(true, "Сервер был удален хостом"); 
-                else if(s.val().status === 'offline' && !IS_HOST) quit(true, "Сервер остановлен хостом");
+                if(!s.exists()) quit(true, "СЕРВЕР УДАЛЕН", "Хост удалил этот сервер"); 
+                else if(s.val().status === 'offline' && !IS_HOST) quit(true, "СЕРВЕР ОСТАНОВЛЕН", "Хост выключил сервер (Offline)");
             });
 
-            // 2. Player Setup
+            // 2. Вход игрока
             playerRef = ref(db, `lobbies/${LOBBY_ID}/players/${currentUser.uid}`);
             onDisconnect(playerRef).remove();
             set(playerRef, { x:0, y:20, z:0, rotation:0, nick: currentUser.displayName });
 
-            // 3. LISTEN FOR KICK (Self removal)
+            // 3. ПРОВЕРКА НА КИК (Если узел игрока исчез)
             onValue(playerRef, snap => {
-                // If our player node disappears while game is running, we were kicked
                 if(isGameRunning && !snap.exists()) {
-                    quit(true, "Вы были кикнуты с сервера.");
+                    // Проверяем, не забанили ли нас
+                    get(ref(db, `lobbies/${LOBBY_ID}/banned/${currentUser.uid}`)).then(bSnap => {
+                        if(bSnap.exists()) quit(true, "ВАС ЗАБАНИЛИ", `Причина: ${bSnap.val().reason}`);
+                        else quit(true, "ВАС КИКНУЛИ", "Вы были отключены администратором");
+                    });
                 }
             });
 
+            // Другие игроки
             const pRef = ref(db, `lobbies/${LOBBY_ID}/players`);
             onChildAdded(pRef, s => { if(s.key !== currentUser.uid) spawnPlayer(s.key, s.val()); });
             onChildChanged(pRef, s => { if(s.key !== currentUser.uid && otherPlayers[s.key]) movePlayer(s.key, s.val()); });
             onChildRemoved(pRef, s => { if(otherPlayers[s.key]) { scene.remove(otherPlayers[s.key].mesh); delete otherPlayers[s.key]; } });
 
-            // World Sync
+            // Мир
             const wRef = ref(db, `lobbies/${LOBBY_ID}/world`);
             const handleUpdate = (snap) => {
                 const [x,y,z] = snap.key.split('_').map(Number);
                 const val = snap.val();
-                if (val === 99) { // 99 = Air/Broken
+                if (val === 99) { // 99 = Сломано
                     const m = objectsMap[`${x},${y},${z}`];
                     if (m) removeBlockLocal(m);
                 } else {
@@ -159,7 +203,7 @@
             onChildChanged(wRef, handleUpdate);
         }
 
-        // --- SINGLEPLAYER ---
+        // --- ОДИНОЧНАЯ ИГРА ---
         function loadLocalWorld() {
             document.getElementById('info-panel').innerText = `Мир: ${WORLD_NAME}`;
             const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
@@ -169,12 +213,8 @@
                 for(let k in data) { 
                     const [x,y,z] = k.split(',').map(Number);
                     const mat = data[k];
-                    if (mat === -1) { 
-                        if(hasBlock(x,y,z)) removeBlockLocal(objectsMap[`${x},${y},${z}`]); 
-                    } else {
-                        if(hasBlock(x,y,z)) removeBlockLocal(objectsMap[`${x},${y},${z}`]);
-                        createBlock(x,y,z, materials[mat], false, false); 
-                    }
+                    if(hasBlock(x,y,z)) removeBlockLocal(objectsMap[`${x},${y},${z}`]);
+                    createBlock(x,y,z, materials[mat], false, false); 
                 }
             }
         }
@@ -184,13 +224,11 @@
             const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
             const b = {};
             for(let k in worldData) { if(objectsMap[k]) b[k] = materials.indexOf(objectsMap[k].material); }
-            // Note: Local saving for broken terrain is still tricky without a 'diff' list.
-            // This version saves what EXISTS.
             worlds[WORLD_NAME].blocks = b;
             localStorage.setItem('mc_worlds', JSON.stringify(worlds));
         }
 
-        // --- ENGINE ---
+        // --- ДВИЖОК ---
         function startEngine() { init3D(); isGameRunning = true; animate(); }
 
         function init3D() {
@@ -199,29 +237,59 @@
             scene.add(new THREE.AmbientLight(0xcccccc)); 
             const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(10,20,10); scene.add(dl);
             controls = new PointerLockControls(camera, document.body); controls.pointerSpeed = SETTINGS.sens;
-            controls.addEventListener('lock', () => { isPaused=false; document.getElementById('pause-menu').style.display='none'; isInvOpen=false; document.getElementById('inventory-screen').style.display='none'; });
-            controls.addEventListener('unlock', () => { if(isInvOpen)return; isPaused=true; document.getElementById('pause-menu').style.display='flex'; });
+            
+            // Обработчики блокировки курсора
+            controls.addEventListener('lock', () => { 
+                isPaused=false; document.getElementById('pause-menu').style.display='none'; 
+                isInvOpen=false; document.getElementById('inventory-screen').style.display='none'; 
+            });
+            controls.addEventListener('unlock', () => { 
+                // Если мы выходим из-за ошибки (isGameRunning == false), меню паузы не открываем
+                if(isInvOpen || !isGameRunning) return; 
+                isPaused=true; document.getElementById('pause-menu').style.display='flex'; 
+            });
+            
             const l = new THREE.TextureLoader();
             try { materials = texUrls.map(u => new THREE.MeshLambertMaterial({ map: l.load(u, t=>{t.magFilter=THREE.NearestFilter}) })); } catch(e){}
             initUI();
+            
             document.addEventListener('keydown', onKey); document.addEventListener('keyup', onKey);
             document.addEventListener('wheel', onWheel); document.addEventListener('mousedown', onClick);
             document.addEventListener('mousemove', onMove);
-            document.addEventListener('click', () => { if(!isPaused && !isInvOpen) controls.lock(); });
+            document.addEventListener('click', () => { if(isGameRunning && !isPaused && !isInvOpen) controls.lock(); });
+            
             raycaster = new THREE.Raycaster(); raycaster.far = 5;
             renderer = new THREE.WebGLRenderer({antialias: true}); renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
             window.addEventListener('resize', () => { camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); });
         }
 
+        // --- ЛОГИКА ВЫХОДА / ОШИБКИ ---
         window.resume = () => { document.getElementById('pause-menu').style.display='none'; controls.lock(); };
-        window.quit = (forced, msg) => {
-            isGameRunning = false; // Stop checking kick
-            if(MODE === 'single') saveLocalWorld();
+        
+        window.quit = (forced, title, msg) => {
+            isGameRunning = false; // Останавливаем игру
+            controls.unlock(); // Освобождаем курсор
+            
+            if(MODE === 'single' && !forced) saveLocalWorld();
             if(MODE === 'multi' && playerRef) remove(playerRef);
             if(statusRef) set(statusRef, {state: 'offline'}); 
-            if(forced) alert(msg);
-            window.location.href = 'index.html';
+
+            if(forced) {
+                // ПОКАЗЫВАЕМ ЭКРАН ОШИБКИ ВМЕСТО АЛЕРТА
+                document.getElementById('game-ui').style.display = 'none'; // Скрываем HUD
+                document.getElementById('pause-menu').style.display = 'none';
+                
+                const screen = document.getElementById('screen-error');
+                const h = document.getElementById('err-header');
+                const m = document.getElementById('err-msg');
+                
+                h.innerText = title || "ОШИБКА";
+                m.innerText = msg || "Соединение разорвано";
+                screen.style.display = 'flex';
+            } else {
+                window.location.href = 'index.html';
+            }
         };
 
         function genTerrain() {
@@ -236,15 +304,11 @@
 
         function getKey(x,y,z){return `${x},${y},${z}`;}
         function hasBlock(x,y,z){return worldData[getKey(Math.round(x),Math.round(y),Math.round(z))];}
-        
         function createBlock(x,y,z,m,net=false, isGen=false) {
             const o = new THREE.Mesh(cubeGeo, m); o.position.set(x,y,z); scene.add(o); objects.push(o);
             const k = getKey(x,y,z); worldData[k]=true; objectsMap[k]=o;
-            if(MODE === 'multi' && !net && !isGen) {
-                set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), materials.indexOf(m));
-            }
+            if(MODE === 'multi' && !net && !isGen) set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), materials.indexOf(m));
         }
-        
         function removeBlockLocal(o) {
             scene.remove(o); objects.splice(objects.indexOf(o),1);
             const k = getKey(Math.round(o.position.x), Math.round(o.position.y), Math.round(o.position.z));
@@ -257,25 +321,16 @@
             const i = raycaster.intersectObjects(objects);
             if(i.length > 0 && i[0].distance <= 5) {
                 if(e.button === 0) {
-                    // BREAK
                     const obj = i[0].object;
                     const x = Math.round(obj.position.x), y = Math.round(obj.position.y), z = Math.round(obj.position.z);
                     removeBlockLocal(obj);
-                    
                     if(MODE === 'multi') {
-                        // Check if this block exists in DB (meaning it was placed by a player)
                         get(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`)).then(snap => {
-                            if(snap.exists() && snap.val() !== 99) {
-                                // It was a placed block -> DELETE IT fully
-                                remove(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`));
-                            } else {
-                                // It was a terrain block (not in DB) -> Mark as BROKEN (99)
-                                set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
-                            }
+                            if(snap.exists() && snap.val() !== 99) remove(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`));
+                            else set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
                         });
                     }
                 } else if(e.button === 2) {
-                    // PLACE
                     const m = hotbar[selSlot]; if(m===null) return;
                     const p = i[0].object.position.clone().add(i[0].face.normal);
                     if(Math.abs(camera.position.x - p.x) < 0.8 && Math.abs(camera.position.z - p.z) < 0.8 && (camera.position.y - EYE) < (p.y + 0.5)) return;
@@ -296,12 +351,8 @@
             scene.add(mesh); 
             otherPlayers[id] = { mesh: mesh, targetPos: new THREE.Vector3(data.x, data.y-0.9, data.z), targetRot: data.rotation };
         }
-
         function movePlayer(id, data) {
-            if(otherPlayers[id]) {
-                otherPlayers[id].targetPos.set(data.x, data.y-0.9, data.z);
-                otherPlayers[id].targetRot = data.rotation;
-            }
+            if(otherPlayers[id]) { otherPlayers[id].targetPos.set(data.x, data.y-0.9, data.z); otherPlayers[id].targetRot = data.rotation; }
         }
 
         function onKey(e) {
