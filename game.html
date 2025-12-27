@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: STABLE</title>
+    <title>Minecraft JS: NO STUCK FIX</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', monospace; user-select: none; background: #000; }
         
@@ -102,18 +102,17 @@
         const velocity = new THREE.Vector3();
         let prevTime = performance.now(), lastUploadTime = 0;
         
-        // --- ФИКС ФИЗИКИ: P_W (ширина игрока) уменьшена с 0.9 до 0.7 ---
+        // P_W=0.7 (оптимально), но главное - фикс в resolveCol
         const WALK=5.0, SPRINT=8.0, CROUCH=3.0, JUMP=9, GRAVITY=24.0, P_W=0.7, P_H=1.8, EYE=1.6;
+        
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
         let materials = [];
-        
         const texUrls = [
             './textures/grass.png', './textures/dirt.png', './textures/stone.png', 
             './textures/obsidian.png', './textures/iron.png', './textures/log.png', 
             './textures/planks.png', './textures/brick.png', './textures/sand.png', 
             './textures/diamond.png'
         ];
-        
         let hotbar = [null,null,null,null,null], selSlot=0, holdBlock=null;
 
         if(MODE === 'multi') {
@@ -182,20 +181,13 @@
             onChildChanged(pRef, s => { if(s.key !== currentUser.uid && otherPlayers[s.key]) movePlayer(s.key, s.val()); });
             onChildRemoved(pRef, s => { if(otherPlayers[s.key]) { scene.remove(otherPlayers[s.key].mesh); delete otherPlayers[s.key]; } });
 
-            // --- ИСПРАВЛЕННАЯ СИНХРОНИЗАЦИЯ ПОЛА ---
             const wRef = ref(db, `lobbies/${LOBBY_ID}/world`);
             const handleUpdate = (snap) => {
                 const [x,y,z] = snap.key.split('_').map(Number);
                 const val = snap.val();
-                
-                // Сначала ВСЕГДА удаляем то, что там есть (даже если это трава)
                 const existing = objectsMap[`${x},${y},${z}`];
                 if (existing) removeBlockLocal(existing);
-
-                // Если это не "99" (пустота/сломано), то ставим новый блок
-                if (val !== 99) { 
-                    createBlock(x,y,z, materials[val], true, false); 
-                }
+                if (val !== 99) createBlock(x,y,z, materials[val], true, false); 
             };
             onChildAdded(wRef, handleUpdate);
             onChildChanged(wRef, handleUpdate);
@@ -294,10 +286,7 @@
                     const obj = i[0].object;
                     const x = Math.round(obj.position.x), y = Math.round(obj.position.y), z = Math.round(obj.position.z);
                     removeBlockLocal(obj);
-                    if(MODE === 'multi') {
-                        // Если ломаем - ставим 99
-                        set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
-                    }
+                    if(MODE === 'multi') set(ref(db, `lobbies/${LOBBY_ID}/world/${x}_${y}_${z}`), 99);
                 } else if(e.button === 2) {
                     const m = hotbar[selSlot]; if(m===null) return;
                     const p = i[0].object.position.clone().add(i[0].face.normal);
@@ -323,6 +312,30 @@
             if(otherPlayers[id]) { otherPlayers[id].targetPos.set(data.x, data.y-0.9, data.z); otherPlayers[id].targetRot = data.rotation; }
         }
 
+        function loadLocalWorld() {
+            document.getElementById('info-panel').innerText = `Мир: ${WORLD_NAME}`;
+            const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
+            const data = worlds[WORLD_NAME]?.blocks || {};
+            genTerrain();
+            if(Object.keys(data).length > 0) {
+                for(let k in data) { 
+                    const [x,y,z] = k.split(',').map(Number);
+                    const mat = data[k];
+                    if(hasBlock(x,y,z)) removeBlockLocal(objectsMap[`${x},${y},${z}`]);
+                    createBlock(x,y,z, materials[mat], false, false); 
+                }
+            }
+        }
+
+        function saveLocalWorld() {
+            if(MODE !== 'single') return;
+            const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
+            const b = {};
+            for(let k in worldData) { if(objectsMap[k]) b[k] = materials.indexOf(objectsMap[k].material); }
+            worlds[WORLD_NAME].blocks = b;
+            localStorage.setItem('mc_worlds', JSON.stringify(worlds));
+        }
+
         function onKey(e) {
             const down = e.type === 'keydown';
             if(e.code === 'KeyW') moveF = down; if(e.code === 'KeyS') moveB = down;
@@ -336,12 +349,21 @@
             if(down && e.code.startsWith('Digit')) { const n = parseInt(e.code.slice(5))-1; if(n>=0 && n<5) selectSlot(n); }
         }
 
+        // --- ГЛАВНЫЙ ФИКС: minY += 0.2 (Чтобы ноги не цепляли пол) ---
         function resolveCol(pos) {
-            const r = P_W / 2; const minX = pos.x - r, maxX = pos.x + r; const minZ = pos.z - r, maxZ = pos.z + r; const minY = pos.y - EYE, maxY = pos.y + (P_H - EYE);
+            const r = P_W / 2; 
+            const minX = pos.x - r, maxX = pos.x + r; 
+            const minZ = pos.z - r, maxZ = pos.z + r; 
+            // ВОТ ОНО: +0.2 снизу, чтобы не считать пол стеной
+            const minY = pos.y - EYE + 0.2; 
+            const maxY = pos.y + (P_H - EYE);
+            
             for(let y = Math.round(minY); y <= Math.round(maxY); y++) {
                 for(let z = Math.round(minZ); z <= Math.round(maxZ); z++) {
                     for(let x = Math.round(minX); x <= Math.round(maxX); x++) {
-                        if(hasBlock(x,y,z)) { if (maxX > x-0.5 && minX < x+0.5 && maxY > y-0.5 && minY < y+0.5 && maxZ > z-0.5 && minZ < z+0.5) return true; }
+                        if(hasBlock(x,y,z)) { 
+                            if (maxX > x-0.5 && minX < x+0.5 && maxY > y-0.5 && minY < y+0.5 && maxZ > z-0.5 && minZ < z+0.5) return true; 
+                        }
                     }
                 }
             }
@@ -362,10 +384,42 @@
             }
             velocity.x -= velocity.x * 10.0 * d; velocity.z -= velocity.z * 10.0 * d;
             const pos = camera.position.clone();
-            pos.x += velocity.x * d; if(resolveCol(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
-            pos.z += velocity.z * d; if(resolveCol(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
+            
+            // Проверка X
+            pos.x += velocity.x * d; 
+            if(resolveCol(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
+            
+            // Проверка Z
+            pos.z += velocity.z * d; 
+            if(resolveCol(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
+            
+            // Проверка Y (тут используем обычную логику, так как при падении нам нужен контакт с полом)
             pos.y += velocity.y * d; 
-            if(resolveCol(pos)) { const fall = velocity.y < 0; pos.y -= velocity.y * d; velocity.y = 0; if(fall) { canJump = true; pos.y = Math.round(pos.y - EYE - 0.5) + 0.5 + EYE; } }
+            
+            // Для Y мы делаем отдельную проверку без смещения +0.2, чтобы стоять на земле
+            const r = P_W / 2; 
+            const minX = pos.x - r, maxX = pos.x + r; 
+            const minZ = pos.z - r, maxZ = pos.z + r; 
+            const minY = pos.y - EYE; // Тут БЕЗ +0.2
+            const maxY = pos.y + (P_H - EYE);
+            let colY = false;
+            for(let y = Math.round(minY); y <= Math.round(maxY); y++) {
+                for(let z = Math.round(minZ); z <= Math.round(maxZ); z++) {
+                    for(let x = Math.round(minX); x <= Math.round(maxX); x++) {
+                        if(hasBlock(x,y,z)) { 
+                            if (maxX > x-0.5 && minX < x+0.5 && maxY > y-0.5 && minY < y+0.5 && maxZ > z-0.5 && minZ < z+0.5) colY = true; 
+                        }
+                    }
+                }
+            }
+            
+            if(colY) { 
+                const fall = velocity.y < 0; 
+                pos.y -= velocity.y * d; 
+                velocity.y = 0; 
+                if(fall) { canJump = true; pos.y = Math.round(pos.y - EYE - 0.5) + 0.5 + EYE; }
+            }
+            
             camera.position.copy(pos);
             if(camera.position.y < -30) { camera.position.set(0,30,0); velocity.y=0; }
             for (let id in otherPlayers) { const p = otherPlayers[id]; p.mesh.position.lerp(p.targetPos, 0.3); p.mesh.rotation.y += (p.targetRot - p.mesh.rotation.y) * 0.3; }
