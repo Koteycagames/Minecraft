@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: Solid Physics</title>
+    <title>Minecraft JS: Stable Build</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         
@@ -177,7 +177,7 @@
         import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get, query, orderByChild, equalTo } from "firebase-database";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut } from "firebase-auth";
 
-        // --- CONFIG ---
+        // --- FIREBASE CONFIG ---
         const firebaseConfig = {
           apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI",
           authDomain: "minecraft-2ec53.firebaseapp.com",
@@ -190,20 +190,45 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        // --- AUTH & ANTI-CHEAT ---
+        // --- VARIABLES ---
         let isRegisterMode = false, currentUser = null, statusRef = null, heartbeatInterval = null;
+        let camera, scene, renderer, controls;
+        const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
+        let isMultiplayer = false, isHost = false, currentLobbyId = null, currentWorldName = null;
+        let isPaused = false, isGameRunning = false;
+        let playerRef, worldRef, lobbyRefCheck;
+        let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false, canJump=false, isSprinting=false, isCrouching=false;
+        const velocity = new THREE.Vector3(), direction = new THREE.Vector3();
+        let prevTime = performance.now(), lastUploadTime = 0;
+        let settings = { sensitivity: 0.5, renderDist: 60 };
+        let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
+        
+        // --- PHYSICS CONSTANTS ---
+        const WALK_SPEED=30.0, SPRINT_SPEED=50.0, CROUCH_SPEED=10.0, JUMP_FORCE=9, GRAVITY=24.0;
+        const PLAYER_WIDTH = 0.6; // Width 0.6 = Radius 0.3
+        const PLAYER_HEIGHT = 1.8;
+        const EYE_HEIGHT = 1.6;
+        
+        const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
+        let materials = [];
+        const textureUrls = ['./textures/grass.png', './textures/dirt.png', './textures/bricks.png', './textures/obsidian.png', './textures/iron.png'];
+
+        // --- AUTH ---
         window.toggleAuthMode = () => { isRegisterMode=!isRegisterMode; document.getElementById('auth-title').innerText=isRegisterMode?"РЕГИСТРАЦИЯ":"ВХОД"; document.getElementById('btn-auth-action').innerText=isRegisterMode?"СОЗДАТЬ АККАУНТ":"ВОЙТИ"; document.getElementById('auth-toggle').innerText=isRegisterMode?"Уже есть аккаунт? Войти":"Нет аккаунта? Зарегистрироваться"; document.getElementById('auth-nick').style.display=isRegisterMode?"block":"none"; };
+        
         window.handleAuth = () => {
             const e=document.getElementById('auth-email').value, p=document.getElementById('auth-pass').value, n=document.getElementById('auth-nick').value, err=document.getElementById('auth-error');
             if(!e||!p){err.style.display='block';err.innerText="Заполните поля";return;}
             if(isRegisterMode){ if(!n){err.style.display='block';err.innerText="Нужен никнейм";return;} createUserWithEmailAndPassword(auth,e,p).then((uc)=>{updateProfile(uc.user,{displayName:n});}).catch((e)=>{err.style.display='block';err.innerText=e.message;}); }
             else { signInWithEmailAndPassword(auth,e,p).catch((e)=>{err.style.display='block';err.innerText="Ошибка входа";}); }
         };
+
         window.logout = () => { stopHeartbeat(); if(statusRef)set(statusRef,{state:'offline'}).then(()=>signOut(auth)); else signOut(auth); showScreen('screen-auth'); };
         window.forceLogout = () => { signOut(auth); location.reload(); };
+
         function startHeartbeat(){ if(heartbeatInterval)clearInterval(heartbeatInterval); if(statusRef)set(statusRef,{state:'online',last_seen:Date.now()}); heartbeatInterval=setInterval(()=>{if(currentUser&&statusRef){set(ref(db,`status/${currentUser.uid}/last_seen`),Date.now());}},5000); }
         function stopHeartbeat(){ if(heartbeatInterval)clearInterval(heartbeatInterval); }
-        
+
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 const userStatusRef = ref(db, `status/${user.uid}`);
@@ -220,35 +245,14 @@
         });
         window.addEventListener("beforeunload", ()=>{ if(statusRef)set(statusRef,{state:'offline'}); });
 
-        // --- GAME VARS ---
-        let camera, scene, renderer, controls;
-        const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
-        let isMultiplayer = false, isHost = false, currentLobbyId = null, currentWorldName = null;
-        let isPaused = false, isGameRunning = false;
-        let playerRef, worldRef, lobbyRefCheck;
-        let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false, canJump=false, isSprinting=false, isCrouching=false;
-        const velocity = new THREE.Vector3(), direction = new THREE.Vector3();
-        let prevTime = performance.now(), lastUploadTime = 0;
-        let settings = { sensitivity: 0.5, renderDist: 60 };
-        let isInventoryOpen = false, holdingBlockIndex = null, hotbarContent = [null,null,null,null,null], selectedSlot = 0;
-        
-        // --- PHYSICS CONSTANTS ---
-        const WALK_SPEED=30.0, SPRINT_SPEED=50.0, CROUCH_SPEED=10.0, JUMP_FORCE=9, GRAVITY=24.0;
-        const PLAYER_WIDTH = 0.6; // Ширина игрока (0.3 радиус)
-        const PLAYER_HEIGHT = 1.8; // Высота
-        const EYE_HEIGHT = 1.6;
-
-        const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-        let materials = [];
-        const textureUrls = ['./textures/grass.png', './textures/dirt.png', './textures/bricks.png', './textures/obsidian.png', './textures/iron.png'];
-
-        // --- MENU ---
+        // --- MENUS ---
         window.showScreen = (screenId) => {
             document.querySelectorAll('.menu-screen').forEach(el => el.style.display = 'none');
             document.getElementById(screenId).style.display = 'flex';
             if(screenId==='screen-worlds')renderWorldList();
             if(screenId==='screen-multi')fetchMyServers();
         };
+
         const sS=document.getElementById('sens-slider'), dS=document.getElementById('dist-slider');
         sS.oninput=()=>document.getElementById('sens-val').innerText=sS.value; dS.oninput=()=>document.getElementById('dist-val').innerText=dS.value;
         window.saveSettings=()=>{ settings.sensitivity=parseFloat(sS.value); settings.renderDist=parseInt(dS.value); if(controls)controls.pointerSpeed=settings.sensitivity; if(isGameRunning){document.getElementById('screen-settings').style.display='none';document.getElementById('pause-menu').style.display='flex';}else showScreen('screen-main'); };
@@ -275,19 +279,17 @@
             playerRef=ref(db,`lobbies/${currentLobbyId}/players/${currentUser.uid}`);
             onDisconnect(playerRef).remove();
             set(playerRef,{x:0,y:20,z:0,rotation:0,nick:currentUser.displayName});
-            
             const pR=ref(db,`lobbies/${currentLobbyId}/players`);
             onChildAdded(pR,(s)=>{if(s.key!==currentUser.uid)createOtherPlayer(s.key,s.val())});
             onChildChanged(pR,(s)=>{if(s.key!==currentUser.uid&&otherPlayers[s.key])updateOtherPlayer(s.key,s.val())});
             onChildRemoved(pR,(s)=>{if(otherPlayers[s.key]){scene.remove(otherPlayers[s.key].mesh);delete otherPlayers[s.key]}});
-            
             worldRef=ref(db,`lobbies/${currentLobbyId}/world`);
             onChildAdded(worldRef,(s)=>{const[x,y,z]=s.key.split('_').map(Number);if(!hasBlock(x,y,z))createBlock(x,y,z,materials[s.val()],true)});
             onChildRemoved(worldRef,(s)=>{const[x,y,z]=s.key.split('_').map(Number);const m=objectsMap[`${x},${y},${z}`];if(m)removeBlockLocal(m)});
             setTimeout(()=>{if(Object.keys(worldData).length===0)generateBasicTerrain()},1000);
         }
 
-        // --- GAME LOGIC ---
+        // --- ENGINE & INIT ---
         function startEngine(){ document.querySelectorAll('.menu-screen').forEach(el=>el.style.display='none'); document.getElementById('game-ui').style.display='block'; init(); controls.pointerSpeed=settings.sensitivity; scene.fog.far=settings.renderDist; camera.far=settings.renderDist*2; isGameRunning=true; isPaused=false; animate(); setTimeout(()=>{alert("Кликни чтобы играть");},100); }
         window.resumeGame=()=>{document.getElementById('pause-menu').style.display='none';controls.lock();};
         window.quitToTitle=(f=false,m="")=>{ if(lobbyRefCheck)lobbyRefCheck(); if(isMultiplayer&&!f)remove(playerRef); if(!isMultiplayer&&currentWorldName&&!f){const w=getLocalWorlds();const b={};for(let k in worldData){if(objectsMap[k])b[k]=materials.indexOf(objectsMap[k].material);}w[currentWorldName].blocks=b;saveLocalWorlds(w);} if(f)alert(m); location.reload(); };
@@ -329,30 +331,23 @@
             if(i.length>0&&i[0].distance<=5){
                 if(e.button===0){removeBlockLocal(i[0].object);if(isMultiplayer)remove(ref(db,`lobbies/${currentLobbyId}/world/${Math.round(i[0].object.position.x)}_${Math.round(i[0].object.position.y)}_${Math.round(i[0].object.position.z)}`));}
                 else if(e.button===2){const m=hotbarContent[selectedSlot];if(m===null)return;const p=i[0].object.position.clone().add(i[0].face.normal);
-                // Simple Check to prevent placing inside self
-                const dx=Math.abs(camera.position.x-p.x),dz=Math.abs(camera.position.z-p.z);
-                if(dx<0.7&&dz<0.7&&(camera.position.y-1.6)<(p.y+0.5))return;
+                if(Math.abs(camera.position.x-p.x)<0.7&&Math.abs(camera.position.z-p.z)<0.7&&(camera.position.y-1.6)<(p.y+0.5))return;
                 createBlock(p.x,p.y,p.z,materials[m]);}
             }
         }
 
-        // --- PLAYER ENTITIES ---
+        // --- ENTITIES ---
         function createOtherPlayer(id,data){const g=new THREE.BoxGeometry(0.6,1.8,0.6);const m=new THREE.MeshLambertMaterial({color:0xff0000});const mesh=new THREE.Mesh(g,m);const hg=new THREE.BoxGeometry(0.4,0.4,0.4);const hm=new THREE.MeshLambertMaterial({color:0xffccaa});const head=new THREE.Mesh(hg,hm);head.position.y=0.9;mesh.add(head);if(data.nick){const c=document.createElement('canvas');const ctx=c.getContext('2d');c.width=256;c.height=64;ctx.fillStyle="rgba(0,0,0,0.5)";ctx.fillRect(0,0,256,64);ctx.fillStyle="white";ctx.font="30px Arial";ctx.textAlign="center";ctx.fillText(data.nick,128,42);const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c)}));s.position.y=1.6;s.scale.set(2,0.5,1);mesh.add(s);}mesh.position.set(data.x,data.y-0.9,data.z);scene.add(mesh);otherPlayers[id]={mesh};}
         function updateOtherPlayer(id,data){const p=otherPlayers[id];p.mesh.position.set(data.x,data.y-0.9,data.z);p.mesh.rotation.y=data.rotation;}
         function uploadPos(){if(isMultiplayer&&playerRef)set(playerRef,{x:camera.position.x,y:camera.position.y,z:camera.position.z,rotation:camera.rotation.y,nick:currentUser.displayName});}
 
-        // --- NEW AABB PHYSICS (SOLID) ---
+        // --- AABB PHYSICS (SOLID) ---
         function resolveCollision(newPos) {
-            const width = PLAYER_WIDTH; // 0.6
-            const radius = width / 2;
-            
-            // Получаем границы "коробки" игрока
+            const radius = PLAYER_WIDTH / 2;
             let minX = newPos.x - radius; let maxX = newPos.x + radius;
-            let minY = newPos.y - EYE_HEIGHT; // Ноги
-            let maxY = newPos.y + (PLAYER_HEIGHT - EYE_HEIGHT); // Голова
+            let minY = newPos.y - EYE_HEIGHT; let maxY = newPos.y + (PLAYER_HEIGHT - EYE_HEIGHT);
             let minZ = newPos.z - radius; let maxZ = newPos.z + radius;
 
-            // Находим блоки, с которыми мы можем пересечься (кандидаты)
             const startX = Math.floor(minX), endX = Math.floor(maxX);
             const startY = Math.floor(minY), endY = Math.floor(maxY);
             const startZ = Math.floor(minZ), endZ = Math.floor(maxZ);
@@ -361,19 +356,11 @@
                 for (let z = startZ; z <= endZ; z++) {
                     for (let x = startX; x <= endX; x++) {
                         if (hasBlock(x, y, z)) {
-                            // Если блок есть, проверяем точное пересечение AABB
-                            // Блок занимает (x-0.5, y-0.5, z-0.5) до (x+0.5, y+0.5, z+0.5) в Three.js координатах 
-                            // НО в нашей логике createBlock(x,y,z) ставит его в центр.
-                            // Значит AABB блока:
+                            // AABB Block
                             const bMinX = x - 0.5, bMaxX = x + 0.5;
                             const bMinY = y - 0.5, bMaxY = y + 0.5;
                             const bMinZ = z - 0.5, bMaxZ = z + 0.5;
-
-                            if (maxX > bMinX && minX < bMaxX &&
-                                maxY > bMinY && minY < bMaxY &&
-                                maxZ > bMinZ && minZ < bMaxZ) {
-                                return true; // Collision detected
-                            }
+                            if (maxX > bMinX && minX < bMaxX && maxY > bMinY && minY < bMaxY && maxZ > bMinZ && minZ < bMaxZ) return true;
                         }
                     }
                 }
@@ -381,79 +368,31 @@
             return false;
         }
 
-        // Эта функция проверяет ТОЛЬКО пол под ногами для прилипания/прыжка
-        function checkGround(pos) {
-            const y = pos.y - EYE_HEIGHT; // Ноги
-            // Проверяем блок прямо под ногами (чуть ниже)
-            const blockY = Math.round(y - 0.5);
-            // Проверяем блоки в радиусе игрока, чтобы не падать с края
-            const r = PLAYER_WIDTH / 2;
-            const corners = [
-                {x: pos.x, z: pos.z},
-                {x: pos.x + r, z: pos.z + r}, {x: pos.x - r, z: pos.z + r},
-                {x: pos.x + r, z: pos.z - r}, {x: pos.x - r, z: pos.z - r}
-            ];
-            
-            for(let p of corners) {
-                if(hasBlock(Math.round(p.x), blockY, Math.round(p.z))) return true;
-            }
-            return false;
-        }
-
         function animate() {
             requestAnimationFrame(animate); if(!isGameRunning)return;
             const t=performance.now(), d=Math.min((t-prevTime)/1000,0.05);
-            
             let sim=false; if(isMultiplayer)sim=true; else if(!isPaused&&!isInventoryOpen&&controls.isLocked)sim=true;
             if(sim) {
-                // Apply Gravity
                 velocity.y -= GRAVITY * d;
-
-                // Input
                 if((isMultiplayer&&controls.isLocked&&!isInventoryOpen)||(!isMultiplayer&&sim)) {
                     direction.z=Number(moveForward)-Number(moveBackward); direction.x=Number(moveRight)-Number(moveLeft); direction.normalize();
                     let spd=isCrouching?CROUCH_SPEED:(isSprinting?SPRINT_SPEED:WALK_SPEED);
                     if(moveForward||moveBackward)velocity.z-=direction.z*spd*d; if(moveLeft||moveRight)velocity.x-=direction.x*spd*d;
                 }
-                
-                // Friction
-                velocity.x -= velocity.x * 10.0 * d;
-                velocity.z -= velocity.z * 10.0 * d;
+                velocity.x -= velocity.x * 10.0 * d; velocity.z -= velocity.z * 10.0 * d;
 
-                // --- AXIS SEPARATION COLLISION ---
+                // Physics Steps
                 const pos = camera.position.clone();
-                
-                // 1. Move X
                 pos.x += velocity.x * d;
-                if (resolveCollision(pos)) {
-                    pos.x -= velocity.x * d; // Undo X
-                    velocity.x = 0;
-                }
-                
-                // 2. Move Z
+                if (resolveCollision(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
                 pos.z += velocity.z * d;
-                if (resolveCollision(pos)) {
-                    pos.z -= velocity.z * d; // Undo Z
-                    velocity.z = 0;
-                }
-
-                // 3. Move Y
+                if (resolveCollision(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
                 pos.y += velocity.y * d;
                 if (resolveCollision(pos)) {
-                    // Hit something (floor or ceiling)
                     const wasFalling = velocity.y < 0;
-                    pos.y -= velocity.y * d; // Undo Y
-                    velocity.y = 0;
-                    
-                    if (wasFalling) {
-                        canJump = true;
-                        // Snap to grid logic is complicated with pure AABB, 
-                        // but generally we just stop falling.
-                        // Ideally we snap to the top of the block, but strict collision handles it.
-                    }
+                    pos.y -= velocity.y * d; velocity.y = 0;
+                    if (wasFalling) canJump = true;
                 }
-
-                // Apply to camera
                 camera.position.copy(pos);
 
                 if(camera.position.y < -30) { camera.position.set(0,20,0); velocity.y=0; }
@@ -461,7 +400,6 @@
             }
             prevTime=t; renderer.render(scene, camera);
         }
-        function onRez(){camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);}
     </script>
 </body>
 </html>
