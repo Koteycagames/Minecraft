@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft JS: Final Fix</title>
+    <title>Minecraft JS: FINAL FIXED PHYSICS</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; user-select: none; }
         :root { --mc-btn-bg: #777; --mc-btn-border-light: #aaa; --mc-btn-border-dark: #555; }
@@ -44,8 +44,6 @@
             display: flex; justify-content: space-between; align-items: center;
         }
         .list-item:hover { background: rgba(255,255,255,0.1); }
-        
-        .status-active { color: #55ff55; font-size: 12px; margin-left: 10px; }
         .del-btn { background: #aa0000; padding: 2px 6px; cursor: pointer; border: 1px solid #fff; font-size: 12px; }
 
         #game-ui { display: none; } 
@@ -176,6 +174,7 @@
         import { getDatabase, ref, set, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, get, query, orderByChild, equalTo } from "firebase-database";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut } from "firebase-auth";
 
+        // --- CONFIG ---
         const firebaseConfig = {
           apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI",
           authDomain: "minecraft-2ec53.firebaseapp.com",
@@ -188,7 +187,7 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
 
-        // --- GLOBAL VARIABLES ---
+        // --- VARS ---
         let isRegisterMode = false, currentUser = null, statusRef = null, heartbeatInterval = null;
         let camera, scene, renderer, controls;
         const objects = []; let worldData = {}; const objectsMap = {}; const otherPlayers = {}; let raycaster;
@@ -207,21 +206,21 @@
         const CROUCH_SPEED = 3.0; 
         const JUMP_FORCE = 9; 
         const GRAVITY = 24.0;
+        const PLAYER_WIDTH = 0.6; 
+        const PLAYER_HEIGHT = 1.8; 
+        const EYE_HEIGHT = 1.6;
         
-        const PLAYER_WIDTH = 0.6; const PLAYER_HEIGHT = 1.8; const EYE_HEIGHT = 1.6;
         const cubeGeo = new THREE.BoxGeometry(1, 1, 1);
-        
-        // --- TEXTURES (UPDATED) ---
         let materials = [];
         const textureUrls = [
-            './textures/grass.png',    // 0
-            './textures/dirt.png',     // 1
-            './textures/stone.png',    // 2 (STONE)
-            './textures/obsidian.png', // 3
+            './textures/grass.png',    // 0: ТРАВА
+            './textures/dirt.png',     // 1: ГРЯЗЬ
+            './textures/stone.png',    // 2: КАМЕНЬ
+            './textures/obsidian.png', // 3: ОБСИДИАН
             './textures/iron.png'      // 4
         ];
 
-        // --- AUTH FUNCTIONS (Global) ---
+        // --- AUTH ---
         window.toggleAuthMode = () => { isRegisterMode=!isRegisterMode; document.getElementById('auth-title').innerText=isRegisterMode?"РЕГИСТРАЦИЯ":"ВХОД"; document.getElementById('btn-auth-action').innerText=isRegisterMode?"СОЗДАТЬ АККАУНТ":"ВОЙТИ"; document.getElementById('auth-toggle').innerText=isRegisterMode?"Уже есть аккаунт? Войти":"Нет аккаунта? Зарегистрироваться"; document.getElementById('auth-nick').style.display=isRegisterMode?"block":"none"; };
         window.handleAuth = () => {
             const e=document.getElementById('auth-email').value, p=document.getElementById('auth-pass').value, n=document.getElementById('auth-nick').value, err=document.getElementById('auth-error');
@@ -298,15 +297,15 @@
         window.resumeGame=()=>{document.getElementById('pause-menu').style.display='none';controls.lock();};
         window.quitToTitle=(f=false,m="")=>{ if(lobbyRefCheck)lobbyRefCheck(); if(isMultiplayer&&!f)remove(playerRef); if(!isMultiplayer&&currentWorldName&&!f){const w=getLocalWorlds();const b={};for(let k in worldData){if(objectsMap[k])b[k]=materials.indexOf(objectsMap[k].material);}w[currentWorldName].blocks=b;saveLocalWorlds(w);} if(f)alert(m); location.reload(); };
         
-        // --- LAYERS GENERATION (FIXED) ---
+        // --- LAYERS GENERATION (STRICT) ---
         function generateBasicTerrain() {
-            const R = 12;
+            const R = 12; // Radius
             for (let x = -R; x < R; x++) {
                 for (let z = -R; z < R; z++) {
-                    createBlock(x, 0, z, materials[0]); // GRASS
-                    for(let y=-1; y>=-4; y--) createBlock(x, y, z, materials[1]); // DIRT (4 layers)
-                    for(let y=-5; y>=-9; y--) createBlock(x, y, z, materials[2]); // STONE (5 layers)
-                    createBlock(x, -10, z, materials[3]); // OBSIDIAN (1 layer)
+                    createBlock(x, 0, z, materials[0]); // GRASS (Top)
+                    for(let y = -1; y >= -4; y--) createBlock(x, y, z, materials[1]); // DIRT (4 layers)
+                    for(let y = -5; y >= -9; y--) createBlock(x, y, z, materials[2]); // STONE (5 layers)
+                    createBlock(x, -10, z, materials[3]); // OBSIDIAN (Bottom)
                 }
             }
         }
@@ -391,8 +390,7 @@
                         camera.getWorldDirection(front);
                         front.y = 0; front.normalize();
                         const side = new THREE.Vector3();
-                        // FIX: Correct cross product order for Right vector
-                        side.crossVectors(front, camera.up).normalize(); 
+                        side.crossVectors(front, camera.up).normalize(); // RIGHT = Front x Up
                         const moveDir = new THREE.Vector3();
                         moveDir.addScaledVector(front, fwd);
                         moveDir.addScaledVector(side, right);
@@ -406,7 +404,19 @@
                 const pos = camera.position.clone();
                 pos.x += velocity.x * d; if (resolveCollision(pos)) { pos.x -= velocity.x * d; velocity.x = 0; }
                 pos.z += velocity.z * d; if (resolveCollision(pos)) { pos.z -= velocity.z * d; velocity.z = 0; }
-                pos.y += velocity.y * d; if (resolveCollision(pos)) { const wasFalling = velocity.y < 0; pos.y -= velocity.y * d; velocity.y = 0; if (wasFalling) canJump = true; }
+                pos.y += velocity.y * d; 
+                if (resolveCollision(pos)) { 
+                    const wasFalling = velocity.y < 0; 
+                    pos.y -= velocity.y * d; velocity.y = 0; 
+                    if (wasFalling) { 
+                        canJump = true; 
+                        // SNAP TO BLOCK TOP
+                        const feetY = pos.y - EYE_HEIGHT;
+                        const blockY = Math.round(feetY - 0.5);
+                        // Выталкиваем на поверхность (Центр блока + 0.5 = Верх блока, + Рост глаз)
+                        pos.y = blockY + 0.5 + EYE_HEIGHT; 
+                    } 
+                }
                 camera.position.copy(pos);
                 if(camera.position.y < -30) { camera.position.set(0,20,0); velocity.y=0; }
                 if(isMultiplayer && t-lastUploadTime>150) { uploadPos(); lastUploadTime=t; }
