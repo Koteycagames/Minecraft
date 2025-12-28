@@ -4,137 +4,215 @@
     <meta charset="UTF-8">
     <title>Minecraft JS: Menu</title>
     <style>
-        body { 
-            margin: 0; 
-            font-family: 'Courier New', monospace; 
-            background: url('./textures/dirt.png'); 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center; 
-            height: 100vh; 
-            color: white; 
-            overflow: hidden; /* Чтобы не было полос прокрутки */
-        }
-        /* Затемнение фона */
-        body::before { 
-            content: ""; position: absolute; top:0; left:0; width:100%; height:100%; 
-            background: rgba(0,0,0,0.6); z-index: -1; 
-        }
-
-        h1 { 
-            font-size: 60px; /* Чуть меньше, чтобы не занимало пол-экрана */
-            text-shadow: 4px 4px #000; 
-            margin-bottom: 20px; 
-            font-weight: bold;
-            color: #ddd;
-        }
-
-        /* КНОПКИ (Аккуратные) */
-        .mc-btn { 
-            width: 300px; /* Оптимальная ширина */
-            padding: 10px; /* Меньше высота */
-            margin: 5px 0; /* Меньше отступы */
-            font-size: 16px; 
-            color: #ddd; 
-            background: #777; 
-            border: 2px solid; /* Тонкая рамка у кнопок */
-            border-color: #aaa #555 #555 #aaa; 
-            cursor: pointer; 
-            text-shadow: 1px 1px #000;
-            display: block;
-            text-align: center;
-        }
-        .mc-btn:hover { background: #888; color: #fff; border-color: #bbb #666 #666 #bbb; }
-        .mc-btn:active { border-color: #555 #aaa #aaa #555; }
-
-        .mc-input { 
-            padding: 8px; width: 280px; margin: 5px 0; 
-            background: #000; border: 2px solid #aaa; 
-            color: white; font-size: 16px; 
-        }
-
-        /* ПАНЕЛИ (Без рамок, просто контейнеры) */
-        #auth-panel, #user-panel {
-            /* Убрал border и background */
-            display: none; 
-            flex-direction: column; 
-            align-items: center; 
-            gap: 5px; /* Аккуратный зазор */
-        }
-
-        .link { color: #aaa; text-decoration: underline; cursor: pointer; margin-top: 10px; font-size: 14px; }
-        .link:hover { color: #fff; }
+        body { margin: 0; font-family: 'Courier New', monospace; background: url('./Textury/dirt.png'); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: white; user-select: none; }
+        body::before { content: ""; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.75); z-index: -1; }
         
-        .welcome-text { font-size: 18px; margin-bottom: 15px; text-shadow: 1px 1px 0 #000; color: #aaa; }
+        h1 { font-size: 60px; margin-bottom: 40px; text-shadow: 4px 4px #000; }
+        
+        .menu-box { width: 400px; display: flex; flex-direction: column; gap: 10px; }
+        
+        .mc-btn { padding: 15px; font-size: 20px; color: #ddd; background: #777; border: 4px solid #555; cursor: pointer; text-align: center; font-family: inherit; text-shadow: 2px 2px #000; width: 100%; box-sizing: border-box; }
+        .mc-btn:hover { background: #888; color: #fff; border-color: #777; }
+        
+        .world-list { display: none; width: 500px; height: 300px; background: rgba(0,0,0,0.6); border: 2px solid #555; overflow-y: auto; flex-direction: column; margin-bottom: 20px; }
+        .w-item { padding: 10px; border-bottom: 1px solid #444; background: rgba(0,0,0,0.3); cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .w-item:hover { background: rgba(255,255,255,0.1); }
+        .w-info { display: flex; flex-direction: column; }
+        .w-sub { font-size: 12px; color: #aaa; }
+        
+        /* МОДАЛЬНЫЕ ОКНА */
+        .modal { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.9); z-index: 100; flex-direction: column; align-items: center; justify-content: center; }
+        .modal-box { background: #222; padding: 20px; border: 2px solid #fff; width: 400px; display: flex; flex-direction: column; gap: 15px; }
+        .modal-label { font-size: 14px; color: #aaa; margin-bottom: 5px; }
+        .mc-input, .mc-select { width: 100%; padding: 10px; background: #000; color: white; border: 2px solid #555; font-family: inherit; font-size: 16px; box-sizing: border-box; }
+        .btn-green { background: #363; border-color: #585; }
+        .btn-red { background: #800; border-color: #a00; }
+
+        /* Чекбокс для PBR */
+        .check-row { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.1); padding: 10px; border: 1px solid #555; }
+        .check-row input { transform: scale(1.5); cursor: pointer; }
+
+        #main-menu { display: flex; flex-direction: column; align-items: center; width: 100%; }
+        #single-menu { display: none; flex-direction: column; align-items: center; width: 100%; }
     </style>
 </head>
 <body>
+
     <h1>MINECRAFT JS</h1>
 
-    <div id="auth-panel" style="display: flex;"> 
-        <input type="email" id="email" class="mc-input" placeholder="Email">
-        <input type="password" id="pass" class="mc-input" placeholder="Пароль">
-        <input type="text" id="nick" class="mc-input" placeholder="Никнейм" style="display:none;">
-        
-        <div style="height: 5px;"></div>
-        
-        <button class="mc-btn" onclick="handleAuth()" id="auth-btn">ВОЙТИ</button>
-        <div class="link" onclick="toggleAuth()">Нет аккаунта? Регистрация</div>
+    <div id="main-menu">
+        <div class="menu-box">
+            <button class="mc-btn" onclick="showSingle()">ОДИНОЧНАЯ ИГРА</button>
+            <button class="mc-btn" onclick="window.location.href='multiplayer.html'">СЕТЕВАЯ ИГРА</button>
+            <button class="mc-btn" onclick="openSettings()">НАСТРОЙКИ</button>
+        </div>
     </div>
 
-    <div id="user-panel">
-        <div class="welcome-text">Привет, <span id="username" style="color:#ffff55; font-weight:bold;">Стив</span>!</div>
-        
-        <button class="mc-btn" onclick="window.location.href='worldselect.html'">Одиночная игра</button>
-        <button class="mc-btn" onclick="window.location.href='multiplayer.html'">Сетевая игра</button>
-        <button class="mc-btn" onclick="window.location.href='settings.html'">Настройки</button>
-        
-        <div style="height: 15px;"></div> <button class="mc-btn" onclick="logout()" style="width: 150px; background:#533; border-color:#855 #322 #322 #855;">Выйти</button>
+    <div id="single-menu">
+        <h2 style="margin-top:0">ВЫБОР МИРА</h2>
+        <div class="world-list" id="w-list"></div>
+        <div class="menu-box">
+            <button class="mc-btn btn-green" onclick="openCreateModal()">СОЗДАТЬ НОВЫЙ МИР</button>
+            <button class="mc-btn" onclick="showMain()">НАЗАД</button>
+        </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-
-        const app = initializeApp({ 
-            apiKey: "AIzaSyA-ZeBBpiBMwqGVfGL9bSunUu_d2dXVgcI", 
-            authDomain: "minecraft-2ec53.firebaseapp.com" 
-        });
-        const auth = getAuth(app);
-
-        let isReg = false;
-        window.toggleAuth = () => {
-            isReg = !isReg;
-            document.getElementById('auth-btn').innerText = isReg ? "СОЗДАТЬ АККАУНТ" : "ВОЙТИ";
-            document.getElementById('nick').style.display = isReg ? "block" : "none";
-        };
-
-        window.handleAuth = () => {
-            const e = document.getElementById('email').value;
-            const p = document.getElementById('pass').value;
-            const n = document.getElementById('nick').value;
+    <div id="settings-modal" class="modal">
+        <div class="modal-box">
+            <h2 style="margin:0; text-align:center;">НАСТРОЙКИ</h2>
+            <div>
+                <div class="modal-label">Чувствительность мыши:</div>
+                <input type="range" id="sens" min="0.1" max="2.0" step="0.1" style="width:100%">
+            </div>
+            <div>
+                <div class="modal-label">Дальность прорисовки:</div>
+                <input type="range" id="dist" min="20" max="100" step="10" style="width:100%">
+            </div>
             
-            if(isReg) {
-                if(!n) return alert("Введи ник");
-                createUserWithEmailAndPassword(auth, e, p).then(c => updateProfile(c.user, {displayName: n})).catch(e => alert(e.message));
-            } else {
-                signInWithEmailAndPassword(auth, e, p).catch(e => alert("Ошибка входа"));
-            }
-        };
+            <div class="check-row">
+                <span>PBR Текстуры (BETA)</span>
+                <input type="checkbox" id="pbr_mode">
+            </div>
 
-        window.logout = () => signOut(auth);
+            <button class="mc-btn" onclick="saveSettings()">СОХРАНИТЬ</button>
+        </div>
+    </div>
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                document.getElementById('auth-panel').style.display = 'none';
-                document.getElementById('user-panel').style.display = 'flex'; // Вертикально
-                document.getElementById('username').innerText = user.displayName || "Игрок";
-            } else {
-                document.getElementById('auth-panel').style.display = 'flex';
-                document.getElementById('user-panel').style.display = 'none';
+    <div id="create-world-modal" class="modal">
+        <div class="modal-box">
+            <h2 style="margin:0; text-align:center;">СОЗДАНИЕ МИРА</h2>
+            
+            <div>
+                <div class="modal-label">Название мира:</div>
+                <input type="text" id="world-name" class="mc-input" placeholder="Новый мир">
+            </div>
+
+            <div>
+                <div class="modal-label">Размер мира:</div>
+                <select id="world-size" class="mc-select">
+                    <option value="10">Маленький (10x10)</option>
+                    <option value="30" selected>Обычный (30x30)</option>
+                    <option value="50">Огромный (50x50)</option>
+                </select>
+            </div>
+
+            <div>
+                <div class="modal-label">Режим игры:</div>
+                <select id="game-mode" class="mc-select">
+                    <option value="survival">Выживание (Жизни, Голод)</option>
+                    <option value="creative">Творческий (Полет, Бессмертие)</option>
+                </select>
+            </div>
+
+            <div style="display:flex; gap:10px;">
+                <button class="mc-btn btn-green" onclick="createWorldFinal()">СОЗДАТЬ</button>
+                <button class="mc-btn btn-red" onclick="closeCreateModal()">ОТМЕНА</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showSingle() {
+            document.getElementById('main-menu').style.display = 'none';
+            document.getElementById('single-menu').style.display = 'flex';
+            loadWorlds();
+        }
+
+        function showMain() {
+            document.getElementById('single-menu').style.display = 'none';
+            document.getElementById('main-menu').style.display = 'flex';
+        }
+
+        function loadWorlds() {
+            const list = document.getElementById('w-list');
+            list.innerHTML = '';
+            const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
+            
+            if(Object.keys(worlds).length === 0) {
+                list.innerHTML = '<div style="padding:20px; text-align:center; color:#777">Список пуст</div>';
             }
-        });
+
+            for(let name in worlds) {
+                const w = worlds[name];
+                const mode = w.mode ? (w.mode === 'creative' ? 'Творческий' : 'Выживание') : 'Выживание';
+                const size = w.size ? `${w.size}x${w.size}` : '30x30';
+                const date = new Date(w.created || Date.now()).toLocaleDateString();
+
+                const div = document.createElement('div');
+                div.className = 'w-item';
+                div.innerHTML = `
+                    <div class="w-info">
+                        <span style="font-weight:bold; font-size:18px;">${name}</span>
+                        <span class="w-sub">${mode}, ${size} (${date})</span>
+                    </div>
+                    <button class="mc-btn btn-red" style="width:50px; padding:5px; font-size:14px;" onclick="event.stopPropagation(); deleteWorld('${name}')">X</button>
+                `;
+                div.onclick = () => playWorld(name);
+                list.appendChild(div);
+            }
+        }
+
+        function openCreateModal() {
+            document.getElementById('world-name').value = '';
+            document.getElementById('create-world-modal').style.display = 'flex';
+            document.getElementById('world-name').focus();
+        }
+
+        function closeCreateModal() {
+            document.getElementById('create-world-modal').style.display = 'none';
+        }
+
+        function createWorldFinal() {
+            const name = document.getElementById('world-name').value.trim() || "Новый мир";
+            const size = parseInt(document.getElementById('world-size').value);
+            const mode = document.getElementById('game-mode').value;
+            
+            const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
+            if(worlds[name]) return alert("Мир с таким именем уже существует!");
+
+            worlds[name] = { 
+                blocks: {}, 
+                created: Date.now(),
+                size: size, 
+                mode: mode 
+            };
+            
+            localStorage.setItem('mc_worlds', JSON.stringify(worlds));
+            playWorld(name);
+        }
+
+        function playWorld(name) {
+            localStorage.setItem('mc_mode', 'single');
+            localStorage.setItem('mc_current_world', name);
+            window.location.href = 'game.html';
+        }
+
+        function deleteWorld(name) {
+            if(confirm('Удалить мир "' + name + '"?')) {
+                const worlds = JSON.parse(localStorage.getItem('mc_worlds') || '{}');
+                delete worlds[name];
+                localStorage.setItem('mc_worlds', JSON.stringify(worlds));
+                loadWorlds();
+            }
+        }
+
+        function openSettings() {
+            document.getElementById('settings-modal').style.display = 'flex';
+            const s = JSON.parse(localStorage.getItem('mc_settings') || '{"sens":0.5, "dist":60, "pbr":false}');
+            document.getElementById('sens').value = s.sens;
+            document.getElementById('dist').value = s.dist;
+            document.getElementById('pbr_mode').checked = s.pbr; // Загружаем состояние галочки
+        }
+
+        function saveSettings() {
+            const s = {
+                sens: parseFloat(document.getElementById('sens').value),
+                dist: parseInt(document.getElementById('dist').value),
+                pbr: document.getElementById('pbr_mode').checked // Сохраняем PBR
+            };
+            localStorage.setItem('mc_settings', JSON.stringify(s));
+            document.getElementById('settings-modal').style.display = 'none';
+        }
     </script>
 </body>
 </html>
